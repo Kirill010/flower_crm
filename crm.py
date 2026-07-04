@@ -808,15 +808,15 @@ class LoginDialog(QDialog):
         layout.addWidget(title)
         subtitle = QLabel("Розничный цветочный магазин + B2B")
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: #89b4fa; font-size: 13px;")
+        subtitle.setStyleSheet("color: #89b4fa; font-size: 14px;")
         layout.addWidget(subtitle)
         layout.addSpacing(15)
         form = QFormLayout()
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("admin")
+        self.username_edit.setPlaceholderText("Логин")
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
-        self.password_edit.setPlaceholderText("••••••••")
+        self.password_edit.setPlaceholderText("Пароль")
         form.addRow("Логин:", self.username_edit)
         form.addRow("Пароль:", self.password_edit)
         layout.addLayout(form)
@@ -824,10 +824,10 @@ class LoginDialog(QDialog):
         self.login_btn.clicked.connect(self.try_login)
         self.password_edit.returnPressed.connect(self.try_login)
         layout.addWidget(self.login_btn)
-        hint = QLabel("admin / admin123  •  manager / manager123  •  florist / florist123")
-        hint.setStyleSheet("color: gray; font-size: 10px;")
-        hint.setAlignment(Qt.AlignCenter)
-        layout.addWidget(hint)
+        # hint = QLabel("admin / admin123  •  manager / manager123  •  florist / florist123")
+        # hint.setStyleSheet("color: gray; font-size: 10px;")
+        # hint.setAlignment(Qt.AlignCenter)
+        # layout.addWidget(hint)
         self.user_data = None
 
     def try_login(self):
@@ -1370,7 +1370,7 @@ class ExpenseDialog(QDialog):
 
 class StaffDialog(QDialog):
     """Диалог сотрудника магазина"""
-    POSITIONS = ['florist', 'manager', 'director']
+    POSITIONS = ['florist', 'manager', 'director']  # добавлена должность 'director'
 
     def __init__(self, staff=None, store=None, parent=None):
         super().__init__(parent)
@@ -2911,7 +2911,7 @@ class MainWindow(QMainWindow):
     def add_corporate_client(self):
         with session_scope() as session:
             store = session.query(Store).get(self.store_id)
-            # Менеджеры могут быть как с должностью 'manager', так и 'director'
+            # Менеджеры и директора могут быть персональными менеджерами
             managers = session.query(Staff).filter(
                 Staff.position.in_(['manager', 'director']),
                 Staff.is_active == True
@@ -3645,43 +3645,69 @@ def main():
 
             # Создаём пользователей (если их ещё нет)
             if session.query(User).count() == 0:
+                # Администратор (разработчик)
                 admin = User(username='admin', password_hash=hash_password('admin123'),
                              full_name='Администратор', role='admin')
-                manager = User(username='manager', password_hash=hash_password('manager123'),
-                               full_name='Менеджер', role='manager')
-                florist_user = User(username='florist', password_hash=hash_password('florist123'),
-                                    full_name='Флорист', role='florist')
-                session.add_all([admin, manager, florist_user])
-                print("✅ Созданы пользователи: admin, manager, florist")
+                # Директора
+                sergey = User(username='sergey', password_hash=hash_password('sergey123'),
+                              full_name='Сергей', role='admin')
+                nikolay = User(username='nikolay', password_hash=hash_password('nikolay123'),
+                               full_name='Николай', role='admin')
+                # Менеджеры
+                mikhail = User(username='mikhail', password_hash=hash_password('mikhail123'),
+                               full_name='Михаил', role='manager')
+                klim = User(username='klim', password_hash=hash_password('klim123'),
+                            full_name='Клим', role='manager')
+                # Флористы
+                natalia_bobrova = User(username='natalia_bobrova', password_hash=hash_password('natalia123'),
+                                       full_name='Наталья Боброва', role='florist')
+                natalia = User(username='natalia', password_hash=hash_password('natalia123'),
+                               full_name='Наталья', role='florist')
+
+                session.add_all([admin, sergey, nikolay, mikhail, klim, natalia_bobrova, natalia])
+                session.commit()
+                print("✅ Созданы пользователи: admin, sergey, nikolay, mikhail, klim, natalia_bobrova, natalia")
 
             # Создаём сотрудников (без дублирования user_id!)
             store = session.query(Store).first()
             if store and session.query(Staff).count() == 0:
+                # Получаем пользователей по логинам
                 admin_user = session.query(User).filter_by(username='admin').first()
-                manager_user = session.query(User).filter_by(username='manager').first()
-                florist_user = session.query(User).filter_by(username='florist').first()
+                sergey_user = session.query(User).filter_by(username='sergey').first()
+                nikolay_user = session.query(User).filter_by(username='nikolay').first()
+                mikhail_user = session.query(User).filter_by(username='mikhail').first()
+                klim_user = session.query(User).filter_by(username='klim').first()
+                natalia_bobrova_user = session.query(User).filter_by(username='natalia_bobrova').first()
+                natalia_user = session.query(User).filter_by(username='natalia').first()
 
-                # Сотрудник 1: флорист с логином
-                staff1 = Staff(user_id=florist_user.id, store_id=store.id,
-                               full_name='Наталья Боброва', position='florist',
-                               phone='+7 (917) 549-49-41', salary=60000)
-                # Сотрудник 2: менеджер с логином
-                staff2 = Staff(user_id=manager_user.id, store_id=store.id,
-                               full_name='Михаил', position='manager',
-                               phone='+7 (961) 352-89-10', salary=80000)
-                # Сотрудник 3: директор с логином администратора
-                staff3 = Staff(user_id=admin_user.id, store_id=store.id,
-                               full_name='Сергей', position='director',
-                               phone='+7 (916) 162-21-31', salary=100000)
-                # Сотрудники БЕЗ привязки к пользователям (user_id=None)
-                staff4 = Staff(store_id=store.id, full_name='Наталья', position='florist',
-                               phone='+7 (995) 152-21-31', salary=60000)
-                staff5 = Staff(store_id=store.id, full_name='Клим', position='manager',
-                               phone='+7 (916) 198-51-56', salary=80000)
-                staff6 = Staff(store_id=store.id, full_name='Николай', position='director',
-                               phone='+7 (916) 255-86-84', salary=100000)
-                session.add_all([staff1, staff2, staff3, staff4, staff5, staff6])
-                print("✅ Созданы сотрудники (включая директоров Сергея и Николая)")
+                # Сотрудники с привязкой к пользователям
+                staff_admin = Staff(user_id=admin_user.id, store_id=store.id,
+                                    full_name='Администратор', position='admin',
+                                    phone='+7 (900) 111-11-11', salary=0)
+                staff_sergey = Staff(user_id=sergey_user.id, store_id=store.id,
+                                     full_name='Сергей', position='director',
+                                     phone='+7 (916) 162-21-31', salary=100000)
+                staff_nikolay = Staff(user_id=nikolay_user.id, store_id=store.id,
+                                      full_name='Николай', position='director',
+                                      phone='+7 (916) 255-86-84', salary=100000)
+                staff_mikhail = Staff(user_id=mikhail_user.id, store_id=store.id,
+                                      full_name='Михаил', position='manager',
+                                      phone='+7 (961) 352-89-10', salary=80000)
+                staff_klim = Staff(user_id=klim_user.id, store_id=store.id,
+                                   full_name='Клим', position='manager',
+                                   phone='+7 (916) 198-51-56', salary=80000)
+                staff_natalia_bobrova = Staff(user_id=natalia_bobrova_user.id, store_id=store.id,
+                                              full_name='Наталья Боброва', position='florist',
+                                              phone='+7 (917) 549-49-41', salary=60000)
+                staff_natalia = Staff(user_id=natalia_user.id, store_id=store.id,
+                                      full_name='Наталья', position='florist',
+                                      phone='+7 (995) 152-21-31', salary=60000)
+
+                session.add_all([staff_admin, staff_sergey, staff_nikolay,
+                                 staff_mikhail, staff_klim,
+                                 staff_natalia_bobrova, staff_natalia])
+                session.commit()
+                print("✅ Созданы сотрудники с соответствующими ролями")
 
             # Создаём праздники
             if session.query(Holiday).count() == 0:
@@ -3713,3 +3739,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
