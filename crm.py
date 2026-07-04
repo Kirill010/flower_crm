@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# pyinstaller --onefile --windowed --name "MuzflowersCRM" --icon=myicon.ico --hidden-import=matplotlib.backends.backend_qt5agg --hidden-import=apscheduler.schedulers.qt --hidden-import=apscheduler.executors.pool crm.py
 # ============================================================================
 # 1. Импорты
 # ============================================================================
