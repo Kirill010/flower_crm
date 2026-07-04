@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# ----------------------------------------------------------------------------
-# 1. Импорт необходимых библиотек
-# ----------------------------------------------------------------------------
 import sys
 import os
 import shutil
@@ -26,7 +23,7 @@ from sqlalchemy import (
     Text, ForeignKey, DateTime, func, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, scoped_session
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -40,278 +37,127 @@ from matplotlib.figure import Figure
 from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.qt import QtScheduler
 
-# ----------------------------------------------------------------------------
-# 2. Конфигурация
-# ----------------------------------------------------------------------------
-DB_PATH = 'muzflowers.db'                 # файл базы данных
-BACKUP_DIR = 'backups'                    # папка для резервных копий
+# ============================================================================
+# 1. КОНФИГУРАЦИЯ
+# ============================================================================
+DB_PATH = 'muzflowers.db'
+BACKUP_DIR = 'backups'
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
-# ----------------------------------------------------------------------------
-# 3. Единый стиль интерфейса (фирменные цвета Muzflowers)
-# ----------------------------------------------------------------------------
+# ============================================================================
+# 2. СТИЛИ (фирменные цвета Muzflowers)
+# ============================================================================
 STYLE = """
-/* -------- Общий фон -------- */
-QMainWindow, QDialog {
-    background-color: #F8F9FA;
-    color: #333333;
-}
-
-/* -------- Вкладки -------- */
-QTabWidget::pane {
-    border: 1px solid #D0D0D0;
-    background-color: #FFFFFF;
-}
+QMainWindow, QDialog { background-color: #F8F9FA; color: #333333; }
+QTabWidget::pane { border: 1px solid #D0D0D0; background-color: #FFFFFF; }
 QTabBar::tab {
-    background-color: #E9ECEF;
-    color: #333333;
-    padding: 10px 22px;
-    border: 1px solid #D0D0D0;
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
-    margin-right: 2px;
+    background-color: #E9ECEF; color: #333333;
+    padding: 10px 22px; border: 1px solid #D0D0D0;
+    border-bottom: none; border-radius: 6px 6px 0 0; margin-right: 2px;
 }
-QTabBar::tab:selected {
-    background-color: #4155E1;
-    color: #FFFFFF;
-    font-weight: bold;
-}
-QTabBar::tab:hover {
-    background-color: #A0D1FF;
-    color: #333333;
-}
-
-/* -------- Таблицы -------- */
+QTabBar::tab:selected { background-color: #4155E1; color: #FFFFFF; font-weight: bold; }
+QTabBar::tab:hover { background-color: #A0D1FF; color: #333333; }
 QTableWidget {
-    background-color: #FFFFFF;
-    color: #333333;
-    gridline-color: #E0E0E0;
-    alternate-background-color: #F8F9FA;
+    background-color: #FFFFFF; color: #333333;
+    gridline-color: #E0E0E0; alternate-background-color: #F8F9FA;
 }
-QTableWidget::item:selected {
-    background-color: #A0D1FF;
-    color: #333333;
-}
+QTableWidget::item:selected { background-color: #A0D1FF; color: #333333; }
 QHeaderView::section {
-    background-color: #4155E1;
-    color: #FFFFFF;
-    padding: 8px;
-    border: 1px solid #2E3F9E;
-    font-weight: bold;
+    background-color: #4155E1; color: #FFFFFF;
+    padding: 8px; border: 1px solid #2E3F9E; font-weight: bold;
 }
-
-/* -------- Кнопки -------- */
 QPushButton {
-    background-color: #4155E1;
-    color: #FFFFFF;
-    border: none;
-    padding: 9px 18px;
-    border-radius: 6px;
-    font-weight: bold;
+    background-color: #4155E1; color: #FFFFFF;
+    border: none; padding: 9px 18px; border-radius: 6px; font-weight: bold;
 }
-QPushButton:hover {
-    background-color: #4A44F2;
-}
-QPushButton:pressed {
-    background-color: #05BE9B;
-}
-QPushButton:disabled {
-    background-color: #D0D0D0;
-    color: #888888;
-}
-QPushButton#secondary {
-    background-color: #E9ECEF;
-    color: #333333;
-}
-QPushButton#secondary:hover {
-    background-color: #D0D0D0;
-}
-QPushButton#success {
-    background-color: #64D723;
-    color: #FFFFFF;
-}
-QPushButton#success:hover {
-    background-color: #7BE34A;
-}
-QPushButton#danger {
-    background-color: #DC3545;
-    color: #FFFFFF;
-}
-QPushButton#danger:hover {
-    background-color: #E74C5E;
-}
-
-/* -------- Поля ввода -------- */
+QPushButton:hover { background-color: #4A44F2; }
+QPushButton:pressed { background-color: #05BE9B; }
+QPushButton:disabled { background-color: #D0D0D0; color: #888888; }
+QPushButton#secondary { background-color: #E9ECEF; color: #333333; }
+QPushButton#secondary:hover { background-color: #D0D0D0; }
+QPushButton#success { background-color: #64D723; color: #FFFFFF; }
+QPushButton#danger { background-color: #DC3545; color: #FFFFFF; }
 QLineEdit, QComboBox, QDateEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QListWidget {
-    background-color: #FFFFFF;
-    color: #333333;
-    border: 1px solid #CED4DA;
-    padding: 6px;
-    border-radius: 4px;
+    background-color: #FFFFFF; color: #333333;
+    border: 1px solid #CED4DA; padding: 6px; border-radius: 4px;
 }
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus {
-    border: 1px solid #4155E1;
-}
-
-/* -------- Метки -------- */
-QLabel {
-    color: #333333;
-}
-
-/* -------- Группы -------- */
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus { border: 1px solid #4155E1; }
+QLabel { color: #333333; }
 QGroupBox {
-    border: 1px solid #D0D0D0;
-    border-radius: 8px;
-    margin-top: 12px;
-    padding-top: 18px;
-    color: #333333;
+    border: 1px solid #D0D0D0; border-radius: 8px;
+    margin-top: 12px; padding-top: 18px; color: #333333;
 }
 QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 12px;
-    padding: 0 8px;
-    color: #4A44F2;
-    font-weight: bold;
+    subcontrol-origin: margin; left: 12px;
+    padding: 0 8px; color: #4A44F2; font-weight: bold;
 }
-
-/* -------- Чекбоксы -------- */
-QCheckBox {
-    color: #333333;
-    spacing: 6px;
-}
-QCheckBox::indicator:checked {
-    background-color: #05BE9B;
-    border: 1px solid #05BE9B;
-}
-
-/* -------- Меню -------- */
-QMenuBar {
-    background-color: #FFFFFF;
-    color: #333333;
-}
-QMenuBar::item:selected {
-    background-color: #4155E1;
-    color: #FFFFFF;
-}
-QMenu {
-    background-color: #FFFFFF;
-    color: #333333;
-    border: 1px solid #D0D0D0;
-}
-QMenu::item:selected {
-    background-color: #A0D1FF;
-    color: #333333;
-}
-
-/* -------- Статус-бар -------- */
-QStatusBar {
-    background-color: #9B9FF2;
-    color: #FFFFFF;
-}
-
-/* -------- Прогресс-бар -------- */
-QProgressBar {
-    border: 1px solid #D0D0D0;
-    border-radius: 4px;
-    text-align: center;
-    background-color: #F2F2F2;
-    color: #333333;
-}
-QProgressBar::chunk {
-    background-color: #05BE9B;
-    border-radius: 3px;
-}
-
-/* -------- Списки -------- */
-QListWidget::item:selected {
-    background-color: #A0D1FF;
-    color: #333333;
-}
-
-/* -------- Скролл-бары -------- */
-QScrollBar:vertical {
-    background: #F2F2F2;
-    width: 12px;
-    border-radius: 6px;
-}
-QScrollBar::handle:vertical {
-    background: #4155E1;
-    border-radius: 6px;
-    min-height: 20px;
-}
-QScrollBar::handle:vertical:hover {
-    background: #4A44F2;
-}
-QScrollBar:horizontal {
-    background: #F2F2F2;
-    height: 12px;
-    border-radius: 6px;
-}
-QScrollBar::handle:horizontal {
-    background: #4155E1;
-    border-radius: 6px;
-    min-width: 20px;
-}
-QScrollBar::handle:horizontal:hover {
-    background: #4A44F2;
-}
+QCheckBox { color: #333333; spacing: 6px; }
+QMenuBar { background-color: #FFFFFF; color: #333333; }
+QMenuBar::item:selected { background-color: #4155E1; color: #FFFFFF; }
+QMenu { background-color: #FFFFFF; color: #333333; border: 1px solid #D0D0D0; }
+QMenu::item:selected { background-color: #A0D1FF; color: #333333; }
+QStatusBar { background-color: #9B9FF2; color: #FFFFFF; }
 """
 
-# ----------------------------------------------------------------------------
-# 4. Модели базы данных (SQLAlchemy)
-# ----------------------------------------------------------------------------
+# ============================================================================
+# 3. МОДЕЛИ БАЗЫ ДАННЫХ (SQLAlchemy)
+# ============================================================================
 Base = declarative_base()
 
-# 4.1. Магазин
+
 class Store(Base):
+    """Магазин"""
     __tablename__ = 'stores'
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     address = Column(String(250))
     phone = Column(String(30))
     is_active = Column(Boolean, default=True)
-
-    # Связи
     staff = relationship('Staff', back_populates='store')
     orders = relationship('Order', back_populates='store')
     inventory = relationship('InventoryItem', back_populates='store')
     expenses = relationship('Expense', back_populates='store')
     corporate_clients = relationship('CorporateClient', back_populates='store')
 
-# 4.2. Пользователь (для входа)
+
 class User(Base):
+    """Пользователь системы (для входа)"""
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     username = Column(String(80), unique=True, nullable=False)
     password_hash = Column(String(200), nullable=False)
     full_name = Column(String(150))
-    role = Column(String(20), default='admin')   # admin, manager, florist
+    role = Column(String(20), default='admin')  # admin, manager, florist
     is_active = Column(Boolean, default=True)
-
     staff_profile = relationship('Staff', back_populates='user', uselist=False, cascade='all, delete-orphan')
 
-# 4.3. Сотрудник магазина (флорист или менеджер)
+
 class Staff(Base):
+    """Сотрудник магазина (флорист, менеджер или директор)"""
     __tablename__ = 'staff'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), unique=True, nullable=True)
     store_id = Column(Integer, ForeignKey('stores.id'), nullable=False)
     full_name = Column(String(150), nullable=False)
-    position = Column(String(50))          # florist, manager
+    position = Column(String(50))  # florist, manager, director
     phone = Column(String(30))
     salary = Column(Float, default=0.0)
     is_active = Column(Boolean, default=True)
     hire_date = Column(Date, default=date.today)
-
     user = relationship('User', back_populates='staff_profile')
     store = relationship('Store', back_populates='staff')
 
     @property
     def position_display(self):
-        return {'florist': '🌸 Флорист', 'manager': '👔 Менеджер'}.get(self.position, self.position or '—')
+        return {
+            'florist': '🌸 Флорист',
+            'manager': '👔 Менеджер',
+            'director': '👔 Директор'
+        }.get(self.position, self.position or '—')
 
-# 4.4. Клиент (физическое лицо)
+
 class Customer(Base):
+    """Клиент (физическое лицо)"""
     __tablename__ = 'customers'
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
@@ -321,15 +167,15 @@ class Customer(Base):
     notes = Column(Text)
     is_vip = Column(Boolean, default=False)
     discount = Column(Float, default=0.0)
-
     orders = relationship('Order', back_populates='customer')
 
     @property
     def total_spent(self):
         return sum(o.amount or 0 for o in self.orders if o.status == 'доставлен')
 
-# 4.5. Товар (букет, композиция, набор)
+
 class Product(Base):
+    """Товар (букет, композиция, набор)"""
     __tablename__ = 'products'
     id = Column(Integer, primary_key=True)
     name = Column(String(150), nullable=False)
@@ -352,20 +198,19 @@ class Product(Base):
             return (self.margin / self.cost_price) * 100
         return 0
 
-# 4.6. Заказ
+
 class Order(Base):
+    """Заказ"""
     __tablename__ = 'orders'
     id = Column(Integer, primary_key=True)
     order_number = Column(String(30), unique=True)
     store_id = Column(Integer, ForeignKey('stores.id'), nullable=False)
-    customer_id = Column(Integer, ForeignKey('customers.id'), nullable=False)
+    customer_id = Column(Integer, ForeignKey('customers.id'), nullable=True)
     product_id = Column(Integer, ForeignKey('products.id'), nullable=True)
     corporate_client_id = Column(Integer, ForeignKey('corporate_clients.id'), nullable=True)
-
     order_date = Column(Date, default=date.today)
     delivery_date = Column(Date, nullable=False)
     delivery_time = Column(String(10))
-
     bouquet = Column(String(150), nullable=False)
     composition = Column(Text)
     quantity = Column(Integer, default=1)
@@ -373,26 +218,21 @@ class Order(Base):
     cost_price = Column(Float, default=0.0)
     discount = Column(Float, default=0.0)
     paid = Column(Boolean, default=False)
-
     address = Column(String(250))
     recipient_phone = Column(String(30))
     recipient_name = Column(String(150))
-
     status = Column(String(30), default='новый')
     florist_id = Column(Integer, ForeignKey('staff.id'), nullable=True)
-
     comment = Column(Text)
     occasion = Column(String(50))
     auto_created = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
-
     # Дополнительные услуги
     has_card = Column(Boolean, default=False)
     has_sweets = Column(Boolean, default=False)
-    extra_cost = Column(Float, default=0.0)          # сумма за открытку и сладости
-    is_office_decor = Column(Boolean, default=False) # оформление офиса
+    extra_cost = Column(Float, default=0.0)
+    is_office_decor = Column(Boolean, default=False)
 
-    # Связи
     store = relationship('Store', back_populates='orders')
     customer = relationship('Customer', back_populates='orders')
     product = relationship('Product')
@@ -405,10 +245,15 @@ class Order(Base):
 
     @property
     def client_name(self):
-        return self.customer.name if self.customer else 'Без клиента'
+        if self.customer:
+            return self.customer.name
+        if self.corporate_client:
+            return f"[B2B] {self.corporate_client.company_name}"
+        return 'Без клиента'
 
-# 4.7. Склад (инвентарь)
+
 class InventoryItem(Base):
+    """Склад (инвентарь)"""
     __tablename__ = 'inventory_items'
     id = Column(Integer, primary_key=True)
     store_id = Column(Integer, ForeignKey('stores.id'), nullable=False)
@@ -421,7 +266,6 @@ class InventoryItem(Base):
     batch_number = Column(String(50))
     arrival_date = Column(Date)
     supplier_id = Column(Integer, ForeignKey('suppliers.id'))
-
     store = relationship('Store', back_populates='inventory')
     supplier = relationship('Supplier')
 
@@ -435,8 +279,9 @@ class InventoryItem(Base):
             return (date.today() - self.arrival_date).days
         return 0
 
-# 4.8. Поставщик
+
 class Supplier(Base):
+    """Поставщик"""
     __tablename__ = 'suppliers'
     id = Column(Integer, primary_key=True)
     name = Column(String(150), nullable=False)
@@ -446,8 +291,9 @@ class Supplier(Base):
     notes = Column(Text)
     is_active = Column(Boolean, default=True)
 
-# 4.9. Расходы
+
 class Expense(Base):
+    """Расход"""
     __tablename__ = 'expenses'
     id = Column(Integer, primary_key=True)
     store_id = Column(Integer, ForeignKey('stores.id'), nullable=False)
@@ -456,12 +302,12 @@ class Expense(Base):
     description = Column(String(250))
     supplier_id = Column(Integer, ForeignKey('suppliers.id'))
     date = Column(Date, nullable=False)
-
     store = relationship('Store', back_populates='expenses')
     supplier = relationship('Supplier')
 
-# 4.10. Праздник (для массовых заказов)
+
 class Holiday(Base):
+    """Праздник (для массовых заказов)"""
     __tablename__ = 'holidays'
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
@@ -470,8 +316,9 @@ class Holiday(Base):
     days_before = Column(Integer, default=7)
     notes = Column(Text)
 
-# 4.11. Корпоративный клиент (B2B)
+
 class CorporateClient(Base):
+    """Корпоративный клиент (B2B)"""
     __tablename__ = 'corporate_clients'
     id = Column(Integer, primary_key=True)
     store_id = Column(Integer, ForeignKey('stores.id'), nullable=False)
@@ -487,10 +334,8 @@ class CorporateClient(Base):
     notes = Column(Text)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
-
-    fixed_price = Column(Float, default=0.0)           # фиксированная цена букета
-    manager_id = Column(Integer, ForeignKey('staff.id'), nullable=True)  # персональный менеджер
-
+    fixed_price = Column(Float, default=0.0)
+    manager_id = Column(Integer, ForeignKey('staff.id'), nullable=True)
     store = relationship('Store', back_populates='corporate_clients')
     employees = relationship('CorporateEmployee', back_populates='client', cascade='all, delete-orphan')
     orders = relationship('Order', back_populates='corporate_client')
@@ -505,8 +350,9 @@ class CorporateClient(Base):
     def debt(self):
         return sum(inv.amount for inv in self.invoices if not inv.paid)
 
-# 4.12. Сотрудник корпоративного клиента
+
 class CorporateEmployee(Base):
+    """Сотрудник корпоративного клиента"""
     __tablename__ = 'corporate_employees'
     id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey('corporate_clients.id'), nullable=False)
@@ -518,11 +364,11 @@ class CorporateEmployee(Base):
     is_active = Column(Boolean, default=True)
     preferred_bouquet = Column(String(150))
     preferred_budget = Column(Float)
-
     client = relationship('CorporateClient', back_populates='employees')
 
-# 4.13. Счёт (инвойс)
+
 class Invoice(Base):
+    """Счёт (инвойс)"""
     __tablename__ = 'invoices'
     id = Column(Integer, primary_key=True)
     invoice_number = Column(String(30), unique=True)
@@ -533,11 +379,11 @@ class Invoice(Base):
     paid = Column(Boolean, default=False)
     paid_date = Column(Date)
     description = Column(Text)
-
     corporate_client = relationship('CorporateClient', back_populates='invoices')
 
-# 4.14. Лог автозаказов
+
 class AutoOrdersLog(Base):
+    """Лог автозаказов"""
     __tablename__ = 'auto_orders_log'
     id = Column(Integer, primary_key=True)
     employee_id = Column(Integer, ForeignKey('corporate_employees.id'), nullable=False)
@@ -545,18 +391,19 @@ class AutoOrdersLog(Base):
     created_at = Column(DateTime, default=datetime.now)
     __table_args__ = (UniqueConstraint('employee_id', 'for_date'),)
 
-# ----------------------------------------------------------------------------
-# 5. Работа с базой данных и сессиями
-# ----------------------------------------------------------------------------
+
+# ============================================================================
+# 4. РАБОТА С БД И СЕССИЯМИ
+# ============================================================================
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
 Base.metadata.create_all(engine)
-
 session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 
+
 @contextmanager
 def session_scope():
-    """Контекстный менеджер для сессии БД (автоматический commit/rollback)"""
+    """Контекстный менеджер для сессии БД"""
     session = Session()
     try:
         yield session
@@ -567,15 +414,15 @@ def session_scope():
     finally:
         session.close()
 
+
 def backup_database():
-    """Создаёт резервную копию базы данных в папку backups, хранит последние 10 копий"""
+    """Создаёт резервную копию БД"""
     if not os.path.exists(DB_PATH):
-        return
+        return None
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_path = os.path.join(BACKUP_DIR, f'muzflowers_backup_{timestamp}.db')
     try:
         shutil.copy2(DB_PATH, backup_path)
-        # Удаляем старые копии, оставляем только 10 последних
         backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('muzflowers_backup_')])
         for old in backups[:-10]:
             try:
@@ -587,19 +434,20 @@ def backup_database():
         print(f"Ошибка бэкапа: {e}")
         return None
 
-# Хеширование паролей
+
 def hash_password(password):
     return generate_password_hash(password)
+
 
 def verify_password(password, hash_):
     return check_password_hash(hash_, password)
 
-# ----------------------------------------------------------------------------
-# 6. Вспомогательные функции для работы с данными
-# ----------------------------------------------------------------------------
 
+# ============================================================================
+# 5. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================================
 def get_upcoming_holidays(days=14):
-    """Возвращает список ближайших праздников (начиная с сегодня)"""
+    """Ближайшие праздники"""
     with session_scope() as session:
         today = date.today()
         result = []
@@ -612,19 +460,17 @@ def get_upcoming_holidays(days=14):
                 delta = (h_date - today).days
                 if 0 <= delta <= days:
                     result.append({
-                        'date': h_date,
-                        'name': h.name,
-                        'days_before': h.days_before,
-                        'delta': delta,
-                        'id': h.id
+                        'date': h_date, 'name': h.name,
+                        'days_before': h.days_before, 'delta': delta, 'id': h.id
                     })
             except ValueError:
                 continue
         result.sort(key=lambda x: x['delta'])
         return result
 
+
 def get_upcoming_customer_birthdays(days=30):
-    """Возвращает список ДР клиентов (физ. лиц) на ближайшие days дней"""
+    """ДР клиентов (физ. лиц)"""
     with session_scope() as session:
         today = date.today()
         result = []
@@ -637,18 +483,17 @@ def get_upcoming_customer_birthdays(days=30):
                 delta = (bd_this - today).days
                 if 0 <= delta <= days:
                     result.append({
-                        'date': bd_this,
-                        'name': c.name,
-                        'phone': c.phone or '—',
-                        'delta': delta
+                        'date': bd_this, 'name': c.name,
+                        'phone': c.phone or '—', 'delta': delta
                     })
             except ValueError:
                 continue
         result.sort(key=lambda x: x['delta'])
         return result
 
+
 def get_upcoming_corporate_birthdays(days=30):
-    """Возвращает список ДР сотрудников корп. клиентов на ближайшие days дней"""
+    """ДР сотрудников корп. клиентов"""
     with session_scope() as session:
         today = date.today()
         result = []
@@ -664,21 +509,20 @@ def get_upcoming_corporate_birthdays(days=30):
                 delta = (bd_this - today).days
                 if 0 <= delta <= days:
                     result.append({
-                        'date': bd_this,
-                        'employee_id': e.id,
+                        'date': bd_this, 'employee_id': e.id,
                         'full_name': e.full_name,
                         'company_name': e.client.company_name if e.client else '',
                         'preferred_bouquet': e.preferred_bouquet or '',
-                        'preferred_budget': e.preferred_budget,
-                        'delta': delta
+                        'preferred_budget': e.preferred_budget, 'delta': delta
                     })
             except ValueError:
                 continue
         result.sort(key=lambda x: x['delta'])
         return result
 
+
 def generate_order_number(session):
-    """Генерирует уникальный номер заказа в формате MUZ-YYYYMMDD-XXX"""
+    """Генерирует уникальный номер заказа MUZ-YYYYMMDD-XXX"""
     today_str = date.today().strftime('%Y%m%d')
     prefix = 'MUZ'
     pattern = f'{prefix}-{today_str}-%'
@@ -691,8 +535,9 @@ def generate_order_number(session):
             num = 1
     return f'{prefix}-{today_str}-{num:03d}'
 
+
 def safe_date(value):
-    """Преобразует различные форматы в объект date, при ошибке возвращает сегодня"""
+    """Преобразует различные форматы в объект date"""
     if value is None:
         return date.today()
     if isinstance(value, datetime):
@@ -706,113 +551,90 @@ def safe_date(value):
             return date.today()
     return date.today()
 
-# ----------------------------------------------------------------------------
-# 7. Автозаказы на дни рождения сотрудников компаний
-# ----------------------------------------------------------------------------
+
+# ============================================================================
+# 6. АВТОЗАКАЗЫ НА ДНИ РОЖДЕНИЯ СОТРУДНИКОВ КОМПАНИЙ
+# ============================================================================
 def generate_auto_orders(target_date=None):
-    """
-    Создаёт заказы на завтра для всех сотрудников корп. клиентов,
-    у которых завтра день рождения.
-    Использует preferred_budget сотрудника, затем fixed_price компании.
-    """
+    """Создаёт заказы на завтра для всех сотрудников корп. клиентов с ДР"""
     if target_date is None:
         target_date = date.today() + timedelta(days=1)
-
     with session_scope() as session:
         store = session.query(Store).filter_by(is_active=True).first()
         if not store:
             return 0
-
         employees = session.query(CorporateEmployee).filter(
             CorporateEmployee.is_active == True,
             CorporateEmployee.birthday != None
         ).all()
-
         created = 0
         for emp in employees:
             if not emp.client or not emp.client.is_active:
                 continue
-            # Проверяем, совпадает ли день рождения с target_date
             if (emp.birthday.month == target_date.month and
-                emp.birthday.day == target_date.day):
-                # Уже создавали заказ на эту дату?
+                    emp.birthday.day == target_date.day):
                 existing = session.query(AutoOrdersLog).filter_by(
                     employee_id=emp.id, for_date=target_date
                 ).first()
                 if existing:
                     continue
-
-                # Определяем сумму заказа
                 bouquet = emp.preferred_bouquet or "Корпоративный букет"
                 if emp.preferred_budget and emp.preferred_budget > 0:
                     amount = emp.preferred_budget
                 elif emp.client.fixed_price and emp.client.fixed_price > 0:
                     amount = emp.client.fixed_price
                 else:
-                    amount = 3500.0  # дефолт
-
+                    amount = 3500.0
                 address = emp.client.address or ''
                 order = Order(
-                    store_id=store.id,
-                    customer_id=None,
+                    store_id=store.id, customer_id=None,
                     corporate_client_id=emp.client_id,
-                    order_date=date.today(),
-                    delivery_date=target_date,
-                    bouquet=bouquet,
-                    quantity=1,
-                    amount=amount,
-                    address=address,
-                    recipient_name=emp.full_name,
-                    recipient_phone=emp.phone or '',
-                    status='новый',
+                    order_date=date.today(), delivery_date=target_date,
+                    bouquet=bouquet, quantity=1, amount=amount,
+                    address=address, recipient_name=emp.full_name,
+                    recipient_phone=emp.phone or '', status='новый',
                     occasion='День рождения',
                     comment=f"🤖 Автозаказ на ДР {emp.full_name}",
                     auto_created=True
                 )
-                # Создаём или находим "виртуального" клиента для корп. заказа
-                customer = session.query(Customer).filter_by(name=f"[{emp.client.company_name}]").first()
+                customer = session.query(Customer).filter_by(
+                    name=f"[{emp.client.company_name}]"
+                ).first()
                 if not customer:
-                    customer = Customer(name=f"[{emp.client.company_name}]", phone=emp.client.phone or '')
+                    customer = Customer(
+                        name=f"[{emp.client.company_name}]",
+                        phone=emp.client.phone or ''
+                    )
                     session.add(customer)
                     session.flush()
                 order.customer_id = customer.id
-
                 order.order_number = generate_order_number(session)
                 session.add(order)
                 session.add(AutoOrdersLog(employee_id=emp.id, for_date=target_date))
                 created += 1
-
-        session.commit()
         return created
 
-# ----------------------------------------------------------------------------
-# 8. Массовое создание заказов на праздник
-# ----------------------------------------------------------------------------
+
+# ============================================================================
+# 7. МАССОВОЕ СОЗДАНИЕ ЗАКАЗОВ НА ПРАЗДНИК
+# ============================================================================
 def create_mass_orders(holiday_id, year, bouquet_name, amount, target_gender):
-    """
-    Создаёт заказы для всех активных сотрудников корп. клиентов на указанный праздник.
-    target_gender: 'all', 'female', 'male' (пока реализовано 'all')
-    """
+    """Создаёт заказы для всех активных сотрудников корп. клиентов на праздник"""
     with session_scope() as session:
         holiday = session.query(Holiday).get(holiday_id)
         if not holiday:
             return 0, "Праздник не найден"
-
         delivery_date = date(year, holiday.date_month, holiday.date_day)
         store = session.query(Store).filter_by(is_active=True).first()
         if not store:
             return 0, "Магазин не найден"
-
-        # Пока игнорируем пол (можно доработать, добавив поле gender в CorporateEmployee)
         employees = session.query(CorporateEmployee).filter(
             CorporateEmployee.is_active == True
         ).all()
-
         created = 0
         for emp in employees:
             if not emp.client or not emp.client.is_active:
                 continue
-            # Проверяем, не создавали ли уже заказ на этот праздник для этого сотрудника
             existing = session.query(Order).filter(
                 Order.corporate_client_id == emp.client_id,
                 Order.occasion == holiday.name,
@@ -821,41 +643,40 @@ def create_mass_orders(holiday_id, year, bouquet_name, amount, target_gender):
             ).first()
             if existing:
                 continue
-
             order_amount = amount if amount > 0 else (emp.client.fixed_price or 3500.0)
             order = Order(
-                store_id=store.id,
-                customer_id=None,
+                store_id=store.id, customer_id=None,
                 corporate_client_id=emp.client_id,
-                order_date=date.today(),
-                delivery_date=delivery_date,
-                bouquet=bouquet_name or f"Праздничный букет",
-                quantity=1,
-                amount=order_amount,
+                order_date=date.today(), delivery_date=delivery_date,
+                bouquet=bouquet_name or "Праздничный букет",
+                quantity=1, amount=order_amount,
                 address=emp.client.address or '',
                 recipient_name=emp.full_name,
                 recipient_phone=emp.phone or '',
-                status='новый',
-                occasion=holiday.name,
+                status='новый', occasion=holiday.name,
                 comment=f"Массовый заказ на {holiday.name}",
                 auto_created=True
             )
-            customer = session.query(Customer).filter_by(name=f"[{emp.client.company_name}]").first()
+            customer = session.query(Customer).filter_by(
+                name=f"[{emp.client.company_name}]"
+            ).first()
             if not customer:
-                customer = Customer(name=f"[{emp.client.company_name}]", phone=emp.client.phone or '')
+                customer = Customer(
+                    name=f"[{emp.client.company_name}]",
+                    phone=emp.client.phone or ''
+                )
                 session.add(customer)
                 session.flush()
             order.customer_id = customer.id
             order.order_number = generate_order_number(session)
             session.add(order)
             created += 1
-
-        session.commit()
         return created, f"Создано {created} заказов на {delivery_date.strftime('%d.%m.%Y')}"
 
-# ----------------------------------------------------------------------------
-# 9. Экспорт/импорт в Excel
-# ----------------------------------------------------------------------------
+
+# ============================================================================
+# 8. ЭКСПОРТ/ИМПОРТ В EXCEL
+# ============================================================================
 def export_orders_to_excel(orders, filepath):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -873,13 +694,10 @@ def export_orders_to_excel(orders, filepath):
             i, o.order_number or '',
             o.order_date.isoformat() if o.order_date else '',
             o.delivery_date.isoformat() if o.delivery_date else '',
-            o.occasion or '',
-            o.client_name, o.recipient_phone or '',
+            o.occasion or '', o.client_name, o.recipient_phone or '',
             o.bouquet, o.quantity, o.amount,
-            o.cost_price, o.profit,
-            o.address or '', o.status,
-            "Да" if o.paid else "Нет",
-            o.comment or '',
+            o.cost_price, o.profit, o.address or '', o.status,
+            "Да" if o.paid else "Нет", o.comment or '',
             "Да" if o.has_card else "Нет",
             "Да" if o.has_sweets else "Нет",
             "Да" if o.is_office_decor else "Нет"
@@ -888,6 +706,7 @@ def export_orders_to_excel(orders, filepath):
         max_len = max((len(str(cell.value or '')) for cell in col), default=10)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
     wb.save(filepath)
+
 
 def import_orders_from_excel(filepath, store_id):
     wb = openpyxl.load_workbook(filepath, data_only=True)
@@ -916,17 +735,13 @@ def import_orders_from_excel(filepath, store_id):
                     if existing:
                         continue
                 order = Order(
-                    store_id=store.id,
-                    customer_id=customer.id,
-                    order_date=safe_date(row[2]),
-                    delivery_date=safe_date(row[3]),
-                    occasion=str(row[4] or ''),
-                    bouquet=str(row[7] or 'Букет'),
+                    store_id=store.id, customer_id=customer.id,
+                    order_date=safe_date(row[2]), delivery_date=safe_date(row[3]),
+                    occasion=str(row[4] or ''), bouquet=str(row[7] or 'Букет'),
                     quantity=int(row[8]) if row[8] else 1,
                     amount=float(row[9]) if row[9] else 0.0,
                     cost_price=float(row[10]) if row[10] else 0.0,
-                    address=str(row[12] or ''),
-                    recipient_phone=str(row[6] or ''),
+                    address=str(row[12] or ''), recipient_phone=str(row[6] or ''),
                     recipient_name=str(row[5] or ''),
                     status=str(row[13] or 'новый'),
                     paid=(str(row[14]).lower() == 'да') if row[14] else False,
@@ -942,8 +757,9 @@ def import_orders_from_excel(filepath, store_id):
                 errors.append(f"Строка {row_num}: {str(e)}")
     return imported, errors
 
+
 def export_corporate_proposal(client, filepath):
-    """Экспортирует коммерческое предложение для корпоративного клиента в Excel"""
+    """Экспорт коммерческого предложения для корпоративного клиента"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "КП"
@@ -956,31 +772,30 @@ def export_corporate_proposal(client, filepath):
     ws['A4'] = "Контакт:"; ws['B4'] = client.contact_person or ''
     ws['A5'] = "Телефон:"; ws['B5'] = client.phone or ''
     ws['A6'] = "Скидка:"; ws['B6'] = f"{client.discount}%"
-    ws['A7'] = "Фикс. цена букета:"; ws['B7'] = f"{client.fixed_price:,.0f} ₽" if client.fixed_price else "—"
-    ws['A8'] = "Менеджер:"; ws['B8'] = client.manager.full_name if client.manager else '—'
+    ws['A7'] = "Фикс. цена букета:"
+    ws['B7'] = f"{client.fixed_price:,.0f} ₽" if client.fixed_price else "—"
+    ws['A8'] = "Менеджер:"
+    ws['B8'] = client.manager.full_name if client.manager else '—'
     ws['A9'] = "Условия:"; ws['B9'] = client.payment_terms or 'По счету раз в месяц'
     ws['A11'] = "Сотрудники для поздравления:"
     ws['A11'].font = Font(bold=True)
     ws.append(["ФИО", "Должность", "День рождения", "Телефон", "Предпочт. букет", "Бюджет"])
     for e in client.employees:
         ws.append([
-            e.full_name,
-            e.position or '',
+            e.full_name, e.position or '',
             e.birthday.strftime('%d.%m') if e.birthday else '',
-            e.phone or '',
-            e.preferred_bouquet or '',
-            e.preferred_budget or ''
+            e.phone or '', e.preferred_bouquet or '', e.preferred_budget or ''
         ])
     for col in ws.columns:
         ws.column_dimensions[col[0].column_letter].width = 25
     wb.save(filepath)
 
-# ----------------------------------------------------------------------------
-# 10. Диалоги (окна для ввода/редактирования данных)
-# ----------------------------------------------------------------------------
 
-# 10.1. Окно входа
+# ============================================================================
+# 9. ДИАЛОГИ (окна для ввода/редактирования данных)
+# ============================================================================
 class LoginDialog(QDialog):
+    """Окно входа"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🌹 Muzflowers CRM — Вход")
@@ -1025,18 +840,17 @@ class LoginDialog(QDialog):
             user = session.query(User).filter_by(username=username, is_active=True).first()
             if user and verify_password(password, user.password_hash):
                 self.user_data = {
-                    'id': user.id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role,
+                    'id': user.id, 'username': user.username,
+                    'full_name': user.full_name, 'role': user.role,
                     'is_active': user.is_active
                 }
                 self.accept()
             else:
                 QMessageBox.warning(self, "Ошибка", "Неверный логин или пароль")
 
-# 10.2. Диалог клиента (физ. лицо)
+
 class CustomerDialog(QDialog):
+    """Диалог клиента (физ. лицо)"""
     def __init__(self, customer=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Клиент" if customer else "Новый клиент")
@@ -1045,10 +859,15 @@ class CustomerDialog(QDialog):
         self.name_edit = QLineEdit()
         self.phone_edit = QLineEdit()
         self.address_edit = QLineEdit()
-        self.birthday = QDateEdit(); self.birthday.setCalendarPopup(True); self.birthday.setDate(QDate(1990, 1, 1))
-        self.discount_edit = QDoubleSpinBox(); self.discount_edit.setRange(0, 100); self.discount_edit.setSuffix(" %")
+        self.birthday = QDateEdit()
+        self.birthday.setCalendarPopup(True)
+        self.birthday.setDate(QDate(1990, 1, 1))
+        self.discount_edit = QDoubleSpinBox()
+        self.discount_edit.setRange(0, 100)
+        self.discount_edit.setSuffix(" %")
         self.vip_check = QCheckBox("VIP-клиент")
-        self.notes_edit = QTextEdit(); self.notes_edit.setMaximumHeight(80)
+        self.notes_edit = QTextEdit()
+        self.notes_edit.setMaximumHeight(80)
         layout.addRow("Имя *:", self.name_edit)
         layout.addRow("Телефон:", self.phone_edit)
         layout.addRow("Адрес:", self.address_edit)
@@ -1066,9 +885,13 @@ class CustomerDialog(QDialog):
             self.vip_check.setChecked(customer.is_vip)
             self.notes_edit.setPlainText(customer.notes or '')
         btn_box = QHBoxLayout()
-        ok_btn = QPushButton("💾 Сохранить"); cancel_btn = QPushButton("Отмена")
-        ok_btn.clicked.connect(self.accept); cancel_btn.clicked.connect(self.reject)
-        btn_box.addWidget(ok_btn); btn_box.addWidget(cancel_btn); layout.addRow(btn_box)
+        ok_btn = QPushButton("💾 Сохранить")
+        cancel_btn = QPushButton("Отмена")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_box.addWidget(ok_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addRow(btn_box)
 
     def get_data(self):
         return {
@@ -1081,8 +904,9 @@ class CustomerDialog(QDialog):
             'notes': self.notes_edit.toPlainText()
         }
 
-# 10.3. Диалог товара
+
 class ProductDialog(QDialog):
+    """Диалог товара"""
     def __init__(self, product=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Товар" if product else "Новый товар")
@@ -1091,11 +915,20 @@ class ProductDialog(QDialog):
         self.name_edit = QLineEdit()
         self.category_combo = QComboBox()
         self.category_combo.addItems(["букеты", "корзины", "композиции", "подарочные наборы", "свадебные", "траурные", "комнатные растения"])
-        self.description_edit = QTextEdit(); self.description_edit.setMaximumHeight(70)
-        self.composition_edit = QTextEdit(); self.composition_edit.setMaximumHeight(70)
-        self.price_spin = QDoubleSpinBox(); self.price_spin.setRange(0, 10000000); self.price_spin.setPrefix("₽ "); self.price_spin.setDecimals(2)
-        self.cost_spin = QDoubleSpinBox(); self.cost_spin.setRange(0, 10000000); self.cost_spin.setPrefix("₽ "); self.cost_spin.setDecimals(2)
-        self.active_check = QCheckBox("Активен"); self.popular_check = QCheckBox("Хит продаж")
+        self.description_edit = QTextEdit()
+        self.description_edit.setMaximumHeight(70)
+        self.composition_edit = QTextEdit()
+        self.composition_edit.setMaximumHeight(70)
+        self.price_spin = QDoubleSpinBox()
+        self.price_spin.setRange(0, 10000000)
+        self.price_spin.setPrefix("₽ ")
+        self.price_spin.setDecimals(2)
+        self.cost_spin = QDoubleSpinBox()
+        self.cost_spin.setRange(0, 10000000)
+        self.cost_spin.setPrefix("₽ ")
+        self.cost_spin.setDecimals(2)
+        self.active_check = QCheckBox("Активен")
+        self.popular_check = QCheckBox("Хит продаж")
         self.gift_set_check = QCheckBox("🎁 Подарочный набор")
         layout.addRow("Название *:", self.name_edit)
         layout.addRow("Категория:", self.category_combo)
@@ -1110,7 +943,8 @@ class ProductDialog(QDialog):
             self.name_edit.setText(product.name)
             if product.category:
                 idx = self.category_combo.findText(product.category)
-                if idx >= 0: self.category_combo.setCurrentIndex(idx)
+                if idx >= 0:
+                    self.category_combo.setCurrentIndex(idx)
             self.description_edit.setPlainText(product.description or '')
             self.composition_edit.setPlainText(product.composition or '')
             self.price_spin.setValue(product.price)
@@ -1121,9 +955,13 @@ class ProductDialog(QDialog):
         else:
             self.active_check.setChecked(True)
         btn_box = QHBoxLayout()
-        ok_btn = QPushButton("💾 Сохранить"); cancel_btn = QPushButton("Отмена")
-        ok_btn.clicked.connect(self.accept); cancel_btn.clicked.connect(self.reject)
-        btn_box.addWidget(ok_btn); btn_box.addWidget(cancel_btn); layout.addRow(btn_box)
+        ok_btn = QPushButton("💾 Сохранить")
+        cancel_btn = QPushButton("Отмена")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_box.addWidget(ok_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addRow(btn_box)
 
     def get_data(self):
         return {
@@ -1138,8 +976,9 @@ class ProductDialog(QDialog):
             'is_gift_set': self.gift_set_check.isChecked()
         }
 
-# 10.4. Диалог заказа
+
 class OrderDialog(QDialog):
+    """Диалог заказа"""
     STATUSES = ['новый', 'принят', 'собирается', 'готов', 'доставлен', 'отменён']
     OCCASIONS = ['День рождения', '8 Марта', 'Новый год', '1 Сентября', '14 Февраля',
                  '23 Февраля', 'День учителя', 'Юбилей', 'Свадьба', 'Профессиональный праздник', 'Другое']
@@ -1154,24 +993,16 @@ class OrderDialog(QDialog):
         self.setMinimumWidth(750)
         self.setMinimumHeight(800)
         layout = QFormLayout(self)
-
-        # Клиент (физ. лицо)
         self.customer_combo = QComboBox()
         self.customer_combo.addItem("", None)
         for c in customers or []:
             self.customer_combo.addItem(f"{c.name} ({c.phone or ''})", c.id)
-
-        # Корпоративный клиент
         self.corp_combo = QComboBox()
         self.corp_combo.addItem("— Физ. лицо —", None)
         for cc in corporate_clients or []:
             self.corp_combo.addItem(f"🏢 {cc.company_name}", cc.id)
-
-        # Повод
         self.occasion_combo = QComboBox()
         self.occasion_combo.addItems(self.OCCASIONS)
-
-        # Даты
         self.order_date = QDateEdit()
         self.order_date.setCalendarPopup(True)
         self.order_date.setDate(QDate.currentDate())
@@ -1181,20 +1012,14 @@ class OrderDialog(QDialog):
         self.delivery_date.setMinimumDate(QDate.currentDate())
         self.delivery_time = QLineEdit()
         self.delivery_time.setPlaceholderText("14:00")
-
-        # Товар из каталога
         self.product_combo = QComboBox()
         self.product_combo.addItem("— Без каталога —", None)
         for p in self.products_list:
             if p.is_active:
                 self.product_combo.addItem(f"{p.name} ({p.price:,.0f} ₽)", p.id)
-
-        # Букет и состав
         self.bouquet_edit = QLineEdit()
         self.composition_edit = QTextEdit()
         self.composition_edit.setMaximumHeight(60)
-
-        # Количество, сумма, себестоимость
         self.quantity_spin = QSpinBox()
         self.quantity_spin.setRange(1, 9999)
         self.quantity_spin.setValue(1)
@@ -1206,44 +1031,33 @@ class OrderDialog(QDialog):
         self.cost_spin.setRange(0, 10000000)
         self.cost_spin.setPrefix("₽ ")
         self.cost_spin.setDecimals(2)
-
-        # Получатель и адрес
         self.recipient_name = QLineEdit()
         self.recipient_phone = QLineEdit()
         self.address_edit = QLineEdit()
-
-        # Статус и флорист
         self.status_combo = QComboBox()
         self.status_combo.addItems(self.STATUSES)
         self.florist_combo = QComboBox()
         self.florist_combo.addItem("—", None)
         for f in florists or []:
             self.florist_combo.addItem(f"{f.full_name}", f.id)
-
-        # Оплата и доп. услуги
         self.paid_check = QCheckBox("Оплачен")
         self.card_check = QCheckBox("📨 Открытка (+100 ₽)")
         self.sweets_check = QCheckBox("🍬 Сладости (+200 ₽)")
         self.decor_check = QCheckBox("🌿 Оформление офиса")
 
-        # Автоматический пересчёт суммы при добавлении открытки/сладостей
         def update_extra():
             extra = 0
             if self.card_check.isChecked():
                 extra += 100
             if self.sweets_check.isChecked():
                 extra += 200
-            # Добавляем extra к текущей сумме (но чтобы не зациклиться, берём базовую сумму из поля)
             base = self.amount_spin.value() - (self.order.extra_cost if self.order else 0)
             self.amount_spin.setValue(base + extra)
         self.card_check.stateChanged.connect(update_extra)
         self.sweets_check.stateChanged.connect(update_extra)
 
-        # Комментарий
         self.comment_edit = QTextEdit()
         self.comment_edit.setMaximumHeight(60)
-
-        # Размещаем поля в форме
         layout.addRow("Клиент (физ. лицо):", self.customer_combo)
         layout.addRow("Корпоративный клиент:", self.corp_combo)
         layout.addRow("Повод:", self.occasion_combo)
@@ -1267,7 +1081,6 @@ class OrderDialog(QDialog):
         layout.addRow(self.decor_check)
         layout.addRow("Комментарий:", self.comment_edit)
 
-        # При выборе товара из каталога заполняем поля
         def on_product_selected(idx):
             pid = self.product_combo.itemData(idx)
             if pid:
@@ -1280,14 +1093,15 @@ class OrderDialog(QDialog):
                         break
         self.product_combo.currentIndexChanged.connect(on_product_selected)
 
-        # Если редактируем существующий заказ — заполняем данные
         if order:
             if order.customer_id:
                 idx = self.customer_combo.findData(order.customer_id)
-                if idx >= 0: self.customer_combo.setCurrentIndex(idx)
+                if idx >= 0:
+                    self.customer_combo.setCurrentIndex(idx)
             if order.corporate_client_id:
                 idx = self.corp_combo.findData(order.corporate_client_id)
-                if idx >= 0: self.corp_combo.setCurrentIndex(idx)
+                if idx >= 0:
+                    self.corp_combo.setCurrentIndex(idx)
             if order.occasion and order.occasion in self.OCCASIONS:
                 self.occasion_combo.setCurrentText(order.occasion)
             if order.order_date:
@@ -1296,7 +1110,8 @@ class OrderDialog(QDialog):
             self.delivery_time.setText(order.delivery_time or '')
             if order.product_id:
                 idx = self.product_combo.findData(order.product_id)
-                if idx >= 0: self.product_combo.setCurrentIndex(idx)
+                if idx >= 0:
+                    self.product_combo.setCurrentIndex(idx)
             self.bouquet_edit.setText(order.bouquet or '')
             self.composition_edit.setPlainText(order.composition or '')
             self.quantity_spin.setValue(order.quantity or 1)
@@ -1306,17 +1121,18 @@ class OrderDialog(QDialog):
             self.recipient_phone.setText(order.recipient_phone or '')
             self.address_edit.setText(order.address or '')
             idx = self.status_combo.findText(order.status)
-            if idx >= 0: self.status_combo.setCurrentIndex(idx)
+            if idx >= 0:
+                self.status_combo.setCurrentIndex(idx)
             if order.florist_id:
                 idx = self.florist_combo.findData(order.florist_id)
-                if idx >= 0: self.florist_combo.setCurrentIndex(idx)
+                if idx >= 0:
+                    self.florist_combo.setCurrentIndex(idx)
             self.paid_check.setChecked(order.paid)
             self.comment_edit.setPlainText(order.comment or '')
             self.card_check.setChecked(order.has_card or False)
             self.sweets_check.setChecked(order.has_sweets or False)
             self.decor_check.setChecked(order.is_office_decor or False)
 
-        # Кнопки
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить заказ")
         cancel_btn = QPushButton("Отмена")
@@ -1359,8 +1175,9 @@ class OrderDialog(QDialog):
             'is_office_decor': self.decor_check.isChecked()
         }
 
-# 10.5. Диалог склада
+
 class InventoryDialog(QDialog):
+    """Диалог склада"""
     def __init__(self, item=None, store=None, suppliers=None, parent=None):
         super().__init__(parent)
         self.item = item
@@ -1369,7 +1186,6 @@ class InventoryDialog(QDialog):
         self.setWindowTitle("Позиция склада" if item else "Новая позиция")
         self.setMinimumWidth(500)
         layout = QFormLayout(self)
-
         self.name_edit = QLineEdit()
         self.category_combo = QComboBox()
         self.category_combo.addItems(["цветы", "упаковка", "ленты", "корзины", "открытки", "сладости", "другое"])
@@ -1393,7 +1209,6 @@ class InventoryDialog(QDialog):
         self.supplier_combo.addItem("—", None)
         for s in self.suppliers:
             self.supplier_combo.addItem(s.name, s.id)
-
         layout.addRow("Название *:", self.name_edit)
         layout.addRow("Категория:", self.category_combo)
         layout.addRow("Единица:", self.unit_combo)
@@ -1403,13 +1218,14 @@ class InventoryDialog(QDialog):
         layout.addRow("Партия:", self.batch_edit)
         layout.addRow("Дата прихода:", self.arrival_date)
         layout.addRow("Поставщик:", self.supplier_combo)
-
         if item:
             self.name_edit.setText(item.name)
             idx = self.category_combo.findText(item.category or '')
-            if idx >= 0: self.category_combo.setCurrentIndex(idx)
+            if idx >= 0:
+                self.category_combo.setCurrentIndex(idx)
             idx = self.unit_combo.findText(item.unit or 'шт')
-            if idx >= 0: self.unit_combo.setCurrentIndex(idx)
+            if idx >= 0:
+                self.unit_combo.setCurrentIndex(idx)
             self.quantity_spin.setValue(item.quantity)
             self.min_quantity_spin.setValue(item.min_quantity)
             self.purchase_price_spin.setValue(item.purchase_price)
@@ -1418,8 +1234,8 @@ class InventoryDialog(QDialog):
                 self.arrival_date.setDate(QDate(item.arrival_date.year, item.arrival_date.month, item.arrival_date.day))
             if item.supplier_id:
                 idx = self.supplier_combo.findData(item.supplier_id)
-                if idx >= 0: self.supplier_combo.setCurrentIndex(idx)
-
+                if idx >= 0:
+                    self.supplier_combo.setCurrentIndex(idx)
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1443,8 +1259,9 @@ class InventoryDialog(QDialog):
             'supplier_id': self.supplier_combo.currentData()
         }
 
-# 10.6. Диалог поставщика
+
 class SupplierDialog(QDialog):
+    """Диалог поставщика"""
     def __init__(self, supplier=None, parent=None):
         super().__init__(parent)
         self.supplier = supplier
@@ -1462,14 +1279,12 @@ class SupplierDialog(QDialog):
         layout.addRow("Телефон:", self.phone_edit)
         layout.addRow("Адрес:", self.address_edit)
         layout.addRow("Заметки:", self.notes_edit)
-
         if supplier:
             self.name_edit.setText(supplier.name)
             self.contact_edit.setText(supplier.contact_person or '')
             self.phone_edit.setText(supplier.phone or '')
             self.address_edit.setText(supplier.address or '')
             self.notes_edit.setPlainText(supplier.notes or '')
-
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1489,8 +1304,9 @@ class SupplierDialog(QDialog):
             'is_active': True
         }
 
-# 10.7. Диалог расхода
+
 class ExpenseDialog(QDialog):
+    """Диалог расхода"""
     CATEGORIES = ['аренда', 'закупка цветов', 'транспорт', 'упаковка', 'коммунальные', 'реклама', 'зарплата', 'прочее']
 
     def __init__(self, expense=None, store=None, suppliers=None, parent=None):
@@ -1515,24 +1331,23 @@ class ExpenseDialog(QDialog):
         self.supplier_combo.addItem("—", None)
         for s in self.suppliers:
             self.supplier_combo.addItem(s.name, s.id)
-
         layout.addRow("Категория *:", self.category_combo)
         layout.addRow("Сумма *:", self.amount_spin)
         layout.addRow("Описание:", self.desc_edit)
         layout.addRow("Дата:", self.date_edit)
         layout.addRow("Поставщик:", self.supplier_combo)
-
         if expense:
             idx = self.category_combo.findText(expense.category)
-            if idx >= 0: self.category_combo.setCurrentIndex(idx)
+            if idx >= 0:
+                self.category_combo.setCurrentIndex(idx)
             self.amount_spin.setValue(expense.amount)
             self.desc_edit.setText(expense.description or '')
             if expense.date:
                 self.date_edit.setDate(QDate(expense.date.year, expense.date.month, expense.date.day))
             if expense.supplier_id:
                 idx = self.supplier_combo.findData(expense.supplier_id)
-                if idx >= 0: self.supplier_combo.setCurrentIndex(idx)
-
+                if idx >= 0:
+                    self.supplier_combo.setCurrentIndex(idx)
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1552,9 +1367,10 @@ class ExpenseDialog(QDialog):
             'supplier_id': self.supplier_combo.currentData()
         }
 
-# 10.8. Диалог сотрудника магазина (флорист / менеджер)
+
 class StaffDialog(QDialog):
-    POSITIONS = ['florist', 'manager']
+    """Диалог сотрудника магазина"""
+    POSITIONS = ['florist', 'manager', 'director']
 
     def __init__(self, staff=None, store=None, parent=None):
         super().__init__(parent)
@@ -1575,18 +1391,17 @@ class StaffDialog(QDialog):
         self.hire_date.setCalendarPopup(True)
         self.hire_date.setDate(QDate.currentDate())
         self.active_check = QCheckBox("Активен")
-
         layout.addRow("ФИО *:", self.full_name_edit)
         layout.addRow("Должность:", self.position_combo)
         layout.addRow("Телефон:", self.phone_edit)
         layout.addRow("Зарплата:", self.salary_spin)
         layout.addRow("Дата найма:", self.hire_date)
         layout.addRow(self.active_check)
-
         if staff:
             self.full_name_edit.setText(staff.full_name)
             idx = self.position_combo.findText(staff.position or '')
-            if idx >= 0: self.position_combo.setCurrentIndex(idx)
+            if idx >= 0:
+                self.position_combo.setCurrentIndex(idx)
             self.phone_edit.setText(staff.phone or '')
             self.salary_spin.setValue(staff.salary or 0)
             if staff.hire_date:
@@ -1594,7 +1409,6 @@ class StaffDialog(QDialog):
             self.active_check.setChecked(staff.is_active)
         else:
             self.active_check.setChecked(True)
-
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1615,8 +1429,9 @@ class StaffDialog(QDialog):
             'is_active': self.active_check.isChecked()
         }
 
-# 10.9. Диалог корпоративного клиента
+
 class CorporateClientDialog(QDialog):
+    """Диалог корпоративного клиента"""
     def __init__(self, client=None, store=None, managers=None, parent=None):
         super().__init__(parent)
         self.client = client
@@ -1625,7 +1440,6 @@ class CorporateClientDialog(QDialog):
         self.setWindowTitle("Корпоративный клиент" if client else "Новый корпоративный клиент")
         self.setMinimumWidth(600)
         layout = QFormLayout(self)
-
         self.company_edit = QLineEdit()
         self.contact_edit = QLineEdit()
         self.phone_edit = QLineEdit()
@@ -1651,7 +1465,6 @@ class CorporateClientDialog(QDialog):
         self.manager_combo.addItem("—", None)
         for m in self.managers:
             self.manager_combo.addItem(m.full_name, m.id)
-
         layout.addRow("Название компании *:", self.company_edit)
         layout.addRow("Контактное лицо:", self.contact_edit)
         layout.addRow("Телефон:", self.phone_edit)
@@ -1664,7 +1477,6 @@ class CorporateClientDialog(QDialog):
         layout.addRow("Условия оплаты:", self.payment_terms_edit)
         layout.addRow("Персональный менеджер:", self.manager_combo)
         layout.addRow("Заметки:", self.notes_edit)
-
         if client:
             self.company_edit.setText(client.company_name)
             self.contact_edit.setText(client.contact_person or '')
@@ -1681,8 +1493,8 @@ class CorporateClientDialog(QDialog):
             self.notes_edit.setPlainText(client.notes or '')
             if client.manager_id:
                 idx = self.manager_combo.findData(client.manager_id)
-                if idx >= 0: self.manager_combo.setCurrentIndex(idx)
-
+                if idx >= 0:
+                    self.manager_combo.setCurrentIndex(idx)
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1710,15 +1522,15 @@ class CorporateClientDialog(QDialog):
             'is_active': True
         }
 
-# 10.10. Диалог сотрудника корпоративного клиента
+
 class CorporateEmployeeDialog(QDialog):
+    """Диалог сотрудника корпоративного клиента"""
     def __init__(self, employee=None, parent=None):
         super().__init__(parent)
         self.employee = employee
         self.setWindowTitle("Сотрудник компании" if employee else "Новый сотрудник компании")
         self.setMinimumWidth(500)
         layout = QFormLayout(self)
-
         self.full_name_edit = QLineEdit()
         self.position_edit = QLineEdit()
         self.birthday = QDateEdit()
@@ -1732,7 +1544,6 @@ class CorporateEmployeeDialog(QDialog):
         self.preferred_budget_spin.setRange(0, 10000000)
         self.preferred_budget_spin.setPrefix("₽ ")
         self.preferred_budget_spin.setDecimals(2)
-
         layout.addRow("ФИО *:", self.full_name_edit)
         layout.addRow("Должность:", self.position_edit)
         layout.addRow("День рождения:", self.birthday)
@@ -1740,7 +1551,6 @@ class CorporateEmployeeDialog(QDialog):
         layout.addRow("Предпочт. букет:", self.preferred_bouquet_edit)
         layout.addRow("Бюджет:", self.preferred_budget_spin)
         layout.addRow("Заметки:", self.notes_edit)
-
         if employee:
             self.full_name_edit.setText(employee.full_name)
             self.position_edit.setText(employee.position or '')
@@ -1750,7 +1560,6 @@ class CorporateEmployeeDialog(QDialog):
             self.notes_edit.setPlainText(employee.notes or '')
             self.preferred_bouquet_edit.setText(employee.preferred_bouquet or '')
             self.preferred_budget_spin.setValue(employee.preferred_budget or 0)
-
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1772,8 +1581,9 @@ class CorporateEmployeeDialog(QDialog):
             'is_active': True
         }
 
-# 10.11. Диалог счёта
+
 class InvoiceDialog(QDialog):
+    """Диалог счёта"""
     def __init__(self, invoice=None, clients=None, parent=None):
         super().__init__(parent)
         self.invoice = invoice
@@ -1781,7 +1591,6 @@ class InvoiceDialog(QDialog):
         self.setWindowTitle("Счёт" if invoice else "Новый счёт")
         self.setMinimumWidth(500)
         layout = QFormLayout(self)
-
         self.client_combo = QComboBox()
         self.client_combo.addItem("—", None)
         for c in self.clients:
@@ -1798,17 +1607,16 @@ class InvoiceDialog(QDialog):
         self.amount_spin.setDecimals(2)
         self.desc_edit = QLineEdit()
         self.paid_check = QCheckBox("Оплачен")
-
         layout.addRow("Клиент *:", self.client_combo)
         layout.addRow("Дата выставления:", self.issue_date)
         layout.addRow("Срок оплаты:", self.due_date)
         layout.addRow("Сумма *:", self.amount_spin)
         layout.addRow("Описание:", self.desc_edit)
         layout.addRow(self.paid_check)
-
         if invoice:
             idx = self.client_combo.findData(invoice.corporate_client_id)
-            if idx >= 0: self.client_combo.setCurrentIndex(idx)
+            if idx >= 0:
+                self.client_combo.setCurrentIndex(idx)
             if invoice.issue_date:
                 self.issue_date.setDate(QDate(invoice.issue_date.year, invoice.issue_date.month, invoice.issue_date.day))
             if invoice.due_date:
@@ -1816,7 +1624,6 @@ class InvoiceDialog(QDialog):
             self.amount_spin.setValue(invoice.amount)
             self.desc_edit.setText(invoice.description or '')
             self.paid_check.setChecked(invoice.paid)
-
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1836,9 +1643,10 @@ class InvoiceDialog(QDialog):
             'paid': self.paid_check.isChecked()
         }
 
-# ----------------------------------------------------------------------------
-# 11. Главное окно приложения
-# ----------------------------------------------------------------------------
+
+# ============================================================================
+# 10. ГЛАВНОЕ ОКНО ПРИЛОЖЕНИЯ
+# ============================================================================
 class MainWindow(QMainWindow):
     def __init__(self, user_data):
         super().__init__()
@@ -1849,28 +1657,20 @@ class MainWindow(QMainWindow):
         self.role = user_data['role']
         self.is_active = user_data['is_active']
         self.store_id = None
-
         self.setWindowTitle(f"🌹 Muzflowers CRM — {self.full_name or self.username} ({self.role})")
         self.resize(1800, 1000)
         self.setStyleSheet(STYLE)
-
-        # Создаём интерфейс
         self.setup_ui()
         self.setup_shortcuts()
         self.refresh_all()
-
-        # Планировщик фоновых задач
         self.setup_scheduler()
-
         self.statusBar().showMessage(f"✅ Готово к работе | Пользователь: {self.full_name or self.username}", 5000)
-        # Показываем напоминания через 1.5 секунды
         QTimer.singleShot(1500, self.show_startup_reminders)
 
     # ------------------------------------------------------------------------
-    # 11.1. Построение интерфейса (UI)
+    # 10.1. Построение интерфейса (UI)
     # ------------------------------------------------------------------------
     def setup_ui(self):
-        # Меню
         menubar = self.menuBar()
         file_menu = menubar.addMenu("📁 Файл")
         backup_action = QAction("💾 Создать резервную копию", self)
@@ -1880,7 +1680,6 @@ class MainWindow(QMainWindow):
         exit_action = QAction("🚪 Выход", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-
         settings_menu = menubar.addMenu("⚙️ Настройки")
         if self.role == 'admin':
             users_action = QAction("👥 Пользователи системы", self)
@@ -1889,38 +1688,29 @@ class MainWindow(QMainWindow):
         reminders_action = QAction("🔔 Проверить напоминания", self)
         reminders_action.triggered.connect(self.show_startup_reminders)
         settings_menu.addAction(reminders_action)
-
         help_menu = menubar.addMenu("❓ Помощь")
         about_action = QAction("ℹ️ О программе", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
 
-        # Центральный виджет
         self.central = QWidget()
         self.setCentralWidget(self.central)
         main_layout = QVBoxLayout(self.central)
-
-        # Верхняя панель
         top_bar = QHBoxLayout()
         welcome = QLabel(f"👤 {self.full_name or self.username} ({self.role})")
         welcome.setStyleSheet("font-size: 14px; font-weight: bold; color: #f38ba8;")
         top_bar.addWidget(welcome)
-
         with session_scope() as session:
             store = session.query(Store).filter_by(is_active=True).first()
             if not store:
-                QMessageBox.critical(self, "Ошибка", "Магазин не найден. Создайте его вручную или переустановите приложение.")
+                QMessageBox.critical(self, "Ошибка", "Магазин не найден.")
                 sys.exit(1)
             self.store_id = store.id
             store_name = store.name
-
-        store_label = QLabel(f"🛍️ {store_name}")
-        store_label.setStyleSheet("color: #89b4fa; font-size: 12px;")
-        top_bar.addWidget(store_label)
-        top_bar.addStretch()
-
-        # Индикатор заканчивающихся товаров
-        with session_scope() as session:
+            store_label = QLabel(f"🛍️ {store_name}")
+            store_label.setStyleSheet("color: #89b4fa; font-size: 12px;")
+            top_bar.addWidget(store_label)
+            top_bar.addStretch()
             low_stock_count = session.query(InventoryItem).filter(
                 InventoryItem.store_id == self.store_id,
                 InventoryItem.quantity <= InventoryItem.min_quantity,
@@ -1930,23 +1720,17 @@ class MainWindow(QMainWindow):
                 warning = QLabel(f"⚠️ {low_stock_count} позиций заканчивается!")
                 warning.setStyleSheet("color: #fab387; font-weight: bold; background: #45475a; padding: 5px 10px; border-radius: 4px;")
                 top_bar.addWidget(warning)
-
         refresh_btn = QPushButton("🔄 Обновить")
         refresh_btn.setObjectName("secondary")
         refresh_btn.clicked.connect(self.refresh_all)
         top_bar.addWidget(refresh_btn)
-
         logout_btn = QPushButton("🚪 Выйти")
         logout_btn.clicked.connect(self.logout)
         top_bar.addWidget(logout_btn)
-
         main_layout.addLayout(top_bar)
 
-        # Вкладки
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
-
-        # Создаём все вкладки
         self.create_dashboard_tab()
         self.create_orders_tab()
         self.create_customers_tab()
@@ -1960,18 +1744,12 @@ class MainWindow(QMainWindow):
         self.create_holidays_tab()
         self.create_statistics_tab()
 
-    # ------------------------------------------------------------------------
-    # 11.2. Горячие клавиши
-    # ------------------------------------------------------------------------
     def setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+N"), self, self.add_order)
         QShortcut(QKeySequence("Ctrl+E"), self, self.export_orders)
         QShortcut(QKeySequence("Ctrl+R"), self, self.refresh_all)
         QShortcut(QKeySequence("F5"), self, self.refresh_all)
 
-    # ------------------------------------------------------------------------
-    # 11.3. Планировщик (автозаказы, бэкап, напоминания)
-    # ------------------------------------------------------------------------
     def setup_scheduler(self):
         self.scheduler = QtScheduler()
         self.scheduler.add_job(func=self.run_reminders_check, trigger='cron', hour=9, minute=0, id='reminders_daily')
@@ -1994,9 +1772,6 @@ class MainWindow(QMainWindow):
             self.refresh_all()
             QMessageBox.information(self, "Автозаказы", f"Создано {count} заказов на завтра")
 
-    # ------------------------------------------------------------------------
-    # 11.4. Вспомогательные действия (бэкап, о программе)
-    # ------------------------------------------------------------------------
     def create_backup(self):
         path = backup_database()
         if path:
@@ -2006,19 +1781,14 @@ class MainWindow(QMainWindow):
 
     def show_about(self):
         QMessageBox.about(self, "О программе",
-                          "🌹 Muzflowers CRM v6.0\n\n"
+                          "🌹 Muzflowers CRM v6.1\n\n"
                           "Полноценная система управления цветочным магазином\n"
                           "с поддержкой B2B-корпоративных клиентов, массовыми заказами,\n"
                           "открытками, сладостями и оформлением офиса.\n\n"
                           "© 2026 Muzflowers")
 
-    # ------------------------------------------------------------------------
-    # 11.5. Напоминания при старте
-    # ------------------------------------------------------------------------
     def show_startup_reminders(self):
         messages = []
-
-        # Ближайшие праздники
         upcoming_holidays = get_upcoming_holidays(days=14)
         if upcoming_holidays:
             msg = "🎉 БЛИЖАЙШИЕ ПРАЗДНИКИ:\n\n"
@@ -2030,8 +1800,6 @@ class MainWindow(QMainWindow):
                     msg += f" (через {h['delta']} дн.)"
                 msg += f"\n   📋 Готовиться за {h['days_before']} дн.\n"
             messages.append(("🎉 Праздники", msg))
-
-        # Дни рождения клиентов (физ. лиц)
         upcoming_bd = get_upcoming_customer_birthdays(days=7)
         if upcoming_bd:
             msg = "🎂 ДНИ РОЖДЕНИЯ КЛИЕНТОВ (7 дней):\n\n"
@@ -2043,8 +1811,6 @@ class MainWindow(QMainWindow):
                     msg += f" (через {bd['delta']} дн.)"
                 msg += "\n"
             messages.append(("🎂 Дни рождения клиентов", msg))
-
-        # Дни рождения сотрудников корп. клиентов
         upcoming_corp_bd = get_upcoming_corporate_birthdays(days=14)
         if upcoming_corp_bd:
             msg = "🏢 КОРПОРАТИВНЫЕ ПОЗДРАВЛЕНИЯ (14 дней):\n\n"
@@ -2058,8 +1824,6 @@ class MainWindow(QMainWindow):
                     msg += f" (через {bd['delta']} дн.)"
                 msg += "\n"
             messages.append(("🏢 Корпоративные поздравления", msg))
-
-        # Просроченные счета
         with session_scope() as session:
             overdue = session.query(Invoice).filter(Invoice.paid == False, Invoice.due_date < date.today()).all()
             if overdue:
@@ -2072,16 +1836,12 @@ class MainWindow(QMainWindow):
                     total += inv.amount
                 msg += f"\n💸 Общая сумма просрочки: {total:,.2f} ₽"
                 messages.append(("🔴 Просроченные счета", msg))
-
         if messages:
             for title, msg in messages:
                 QMessageBox.information(self, title, msg)
         else:
             QMessageBox.information(self, "Напоминания", "✅ На ближайшие 14 дней напоминаний нет")
 
-    # ------------------------------------------------------------------------
-    # 11.6. Обновление всех данных
-    # ------------------------------------------------------------------------
     def refresh_all(self):
         try:
             self.refresh_dashboard()
@@ -2101,17 +1861,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка обновления", str(e))
 
     # ------------------------------------------------------------------------
-    # 11.7. Вкладка "Главная"
+    # 10.2. Вкладка "Главная"
     # ------------------------------------------------------------------------
     def create_dashboard_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
         title = QLabel("🏠 Главная панель")
         title.setStyleSheet("font-size: 22px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
-        # Метрики
         metrics_layout = QHBoxLayout()
         self.metric_revenue = self._make_metric_label("#05BE9B")
         self.metric_profit = self._make_metric_label("#4155E1")
@@ -2120,18 +1877,11 @@ class MainWindow(QMainWindow):
         self.metric_corp = self._make_metric_label("#A0D1FF")
         self.metric_low_stock = self._make_metric_label("#9B9FF2")
         self.metric_debt = self._make_metric_label("#4155E1")
-        metrics_layout.addWidget(self.metric_revenue)
-        metrics_layout.addWidget(self.metric_profit)
-        metrics_layout.addWidget(self.metric_orders)
-        metrics_layout.addWidget(self.metric_customers)
-        metrics_layout.addWidget(self.metric_corp)
-        metrics_layout.addWidget(self.metric_low_stock)
-        metrics_layout.addWidget(self.metric_debt)
+        for m in [self.metric_revenue, self.metric_profit, self.metric_orders,
+                  self.metric_customers, self.metric_corp, self.metric_low_stock, self.metric_debt]:
+            metrics_layout.addWidget(m)
         layout.addLayout(metrics_layout)
-
-        # Разделитель: завтрашние заказы и события
         splitter = QSplitter(Qt.Horizontal)
-
         left_box = QGroupBox("📅 Заказы на завтра")
         left_layout = QVBoxLayout(left_box)
         self.tomorrow_orders_table = QTableWidget()
@@ -2141,17 +1891,13 @@ class MainWindow(QMainWindow):
         self.tomorrow_orders_table.setEditTriggers(QTableWidget.NoEditTriggers)
         left_layout.addWidget(self.tomorrow_orders_table)
         splitter.addWidget(left_box)
-
         right_box = QGroupBox("🎉 Ближайшие события")
         right_layout = QVBoxLayout(right_box)
         self.events_preview = QListWidget()
         right_layout.addWidget(self.events_preview)
         splitter.addWidget(right_box)
-
         splitter.setSizes([900, 500])
         layout.addWidget(splitter)
-
-        # Быстрые действия
         actions_group = QGroupBox("⚡ Быстрые действия")
         actions_layout = QHBoxLayout(actions_group)
         btn_new_order = QPushButton("➕ Новый заказ (Ctrl+N)")
@@ -2171,7 +1917,6 @@ class MainWindow(QMainWindow):
         btn_auto.clicked.connect(self._do_auto_orders)
         actions_layout.addWidget(btn_auto)
         layout.addWidget(actions_group)
-
         self.tabs.addTab(tab, "🏠 Главная")
 
     def _make_metric_label(self, color):
@@ -2184,9 +1929,7 @@ class MainWindow(QMainWindow):
         today = date.today()
         month_start = date(today.year, today.month, 1)
         next_month = date(today.year + 1, 1, 1) if today.month == 12 else date(today.year, today.month + 1, 1)
-
         with session_scope() as session:
-            # Заказы за текущий месяц со статусом "доставлен"
             orders = session.query(Order).filter(
                 Order.store_id == self.store_id,
                 Order.delivery_date >= month_start,
@@ -2195,15 +1938,11 @@ class MainWindow(QMainWindow):
             ).all()
             revenue = sum(o.amount or 0 for o in orders)
             cost = sum(o.cost_price or 0 for o in orders)
-
-            # Расходы за месяц
             expenses = session.query(Expense).filter(
                 Expense.store_id == self.store_id,
-                Expense.date >= month_start,
-                Expense.date < next_month
+                Expense.date >= month_start, Expense.date < next_month
             ).all()
             expenses_total = sum(e.amount for e in expenses)
-
             profit = revenue - cost - expenses_total
             total_orders = session.query(Order).filter_by(store_id=self.store_id).count()
             total_customers = session.query(Customer).count()
@@ -2217,15 +1956,10 @@ class MainWindow(QMainWindow):
                 Invoice.paid == False,
                 Invoice.corporate_client.has(store_id=self.store_id)
             ).scalar() or 0
-
-            # Заказы на завтра
             tomorrow = today + timedelta(days=1)
             tomorrow_orders = session.query(Order).filter(
-                Order.store_id == self.store_id,
-                Order.delivery_date == tomorrow
+                Order.store_id == self.store_id, Order.delivery_date == tomorrow
             ).all()
-
-            # Заполняем метрики
             self.metric_revenue.setText(f"💰 Выручка (мес)\n{revenue:,.0f} ₽")
             self.metric_profit.setText(f"📈 Прибыль (мес)\n{profit:,.0f} ₽")
             self.metric_orders.setText(f"📦 Всего заказов\n{total_orders}")
@@ -2233,8 +1967,6 @@ class MainWindow(QMainWindow):
             self.metric_corp.setText(f"🏢 Корп. клиентов\n{corp_clients}")
             self.metric_low_stock.setText(f"⚠️ Заканчивается\n{low_stock} позиций")
             self.metric_debt.setText(f"💸 Дебиторка (корп)\n{total_debt:,.0f} ₽")
-
-            # Таблица завтрашних заказов
             self.tomorrow_orders_table.setRowCount(len(tomorrow_orders))
             for i, o in enumerate(tomorrow_orders):
                 self.tomorrow_orders_table.setItem(i, 0, QTableWidgetItem(o.order_number or ''))
@@ -2242,65 +1974,55 @@ class MainWindow(QMainWindow):
                 self.tomorrow_orders_table.setItem(i, 2, QTableWidgetItem(o.bouquet))
                 self.tomorrow_orders_table.setItem(i, 3, QTableWidgetItem(f"{o.amount:,.0f} ₽"))
                 self.tomorrow_orders_table.setItem(i, 4, QTableWidgetItem(o.status))
-
-        # События (праздники и ДР)
-        self.events_preview.clear()
-        upcoming_holidays = get_upcoming_holidays(days=30)
-        for h in upcoming_holidays:
-            text = f"🎉 {h['date'].strftime('%d.%m')} — {h['name']}"
-            if h['delta'] == 0:
-                text += " (СЕГОДНЯ!)"
-            else:
-                text += f" (через {h['delta']} дн.)"
-            self.events_preview.addItem(QListWidgetItem(text))
-
-        upcoming_bd = get_upcoming_customer_birthdays(days=30)
-        for bd in upcoming_bd:
-            text = f"🎂 {bd['date'].strftime('%d.%m')} — {bd['name']}"
-            if bd['delta'] == 0:
-                text += " (СЕГОДНЯ!)"
-            else:
-                text += f" (через {bd['delta']} дн.)"
-            self.events_preview.addItem(QListWidgetItem(text))
-
-        upcoming_corp = get_upcoming_corporate_birthdays(days=30)
-        for bd in upcoming_corp:
-            text = f"🏢 {bd['date'].strftime('%d.%m')} — {bd['full_name']} ({bd['company_name']})"
-            if bd['delta'] == 0:
-                text += " (СЕГОДНЯ!)"
-            else:
-                text += f" (через {bd['delta']} дн.)"
-            self.events_preview.addItem(QListWidgetItem(text))
+            self.events_preview.clear()
+            upcoming_holidays = get_upcoming_holidays(days=30)
+            for h in upcoming_holidays:
+                text = f"🎉 {h['date'].strftime('%d.%m')} — {h['name']}"
+                if h['delta'] == 0:
+                    text += " (СЕГОДНЯ!)"
+                else:
+                    text += f" (через {h['delta']} дн.)"
+                self.events_preview.addItem(QListWidgetItem(text))
+            upcoming_bd = get_upcoming_customer_birthdays(days=30)
+            for bd in upcoming_bd:
+                text = f"🎂 {bd['date'].strftime('%d.%m')} — {bd['name']}"
+                if bd['delta'] == 0:
+                    text += " (СЕГОДНЯ!)"
+                else:
+                    text += f" (через {bd['delta']} дн.)"
+                self.events_preview.addItem(QListWidgetItem(text))
+            upcoming_corp = get_upcoming_corporate_birthdays(days=30)
+            for bd in upcoming_corp:
+                text = f"🏢 {bd['date'].strftime('%d.%m')} — {bd['full_name']} ({bd['company_name']})"
+                if bd['delta'] == 0:
+                    text += " (СЕГОДНЯ!)"
+                else:
+                    text += f" (через {bd['delta']} дн.)"
+                self.events_preview.addItem(QListWidgetItem(text))
 
     # ------------------------------------------------------------------------
-    # 11.8. Вкладка "Заказы"
+    # 10.3. Вкладка "Заказы"
     # ------------------------------------------------------------------------
     def create_orders_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
         title = QLabel("🛍️ Заказы")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
-        # Фильтры
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("Статус:"))
         self.status_combo = QComboBox()
         self.status_combo.addItems(["Все"] + OrderDialog.STATUSES)
         filter_layout.addWidget(self.status_combo)
-
         filter_layout.addWidget(QLabel("Повод:"))
         self.occasion_combo = QComboBox()
         self.occasion_combo.addItems(["Все"] + OrderDialog.OCCASIONS)
         filter_layout.addWidget(self.occasion_combo)
-
         filter_layout.addWidget(QLabel("Поиск:"))
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Клиент, букет, адрес, номер...")
         self.search_edit.setMaximumWidth(300)
         filter_layout.addWidget(self.search_edit)
-
         apply_btn = QPushButton("🔍")
         apply_btn.setMaximumWidth(40)
         reset_btn = QPushButton("Сброс")
@@ -2310,10 +2032,8 @@ class MainWindow(QMainWindow):
         filter_layout.addWidget(reset_btn)
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
-
-        # Таблица заказов
         self.orders_table = QTableWidget()
-        self.orders_table.setColumnCount(13)  # убрали колонку "Курьер"
+        self.orders_table.setColumnCount(14)
         self.orders_table.setHorizontalHeaderLabels([
             "Номер", "Дата дост.", "Время", "Клиент", "Получатель",
             "Повод", "Букет", "К-во", "Сумма", "Статус", "Опл.",
@@ -2325,8 +2045,6 @@ class MainWindow(QMainWindow):
         self.orders_table.setAlternatingRowColors(True)
         self.orders_table.doubleClicked.connect(self.edit_order)
         layout.addWidget(self.orders_table)
-
-        # Кнопки
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Новый (Ctrl+N)")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -2345,8 +2063,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(export_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
-        # Связываем фильтры
         apply_btn.clicked.connect(self.refresh_orders)
         def reset():
             self.status_combo.setCurrentIndex(0)
@@ -2354,7 +2070,6 @@ class MainWindow(QMainWindow):
             self.search_edit.clear()
             self.refresh_orders()
         reset_btn.clicked.connect(reset)
-
         self.tabs.addTab(tab, "🛍️ Заказы")
 
     def refresh_orders(self):
@@ -2362,7 +2077,6 @@ class MainWindow(QMainWindow):
         status = self.status_combo.currentText()
         occasion = self.occasion_combo.currentText()
         search = self.search_edit.text().strip()
-
         with session_scope() as session:
             query = session.query(Order).filter(Order.store_id == self.store_id)
             if status != "Все":
@@ -2372,15 +2086,12 @@ class MainWindow(QMainWindow):
             if search:
                 like = f"%{search}%"
                 query = query.filter(
-                    (Order.bouquet.like(like)) |
-                    (Order.address.like(like)) |
-                    (Order.comment.like(like)) |
-                    (Order.order_number.like(like)) |
+                    (Order.bouquet.like(like)) | (Order.address.like(like)) |
+                    (Order.comment.like(like)) | (Order.order_number.like(like)) |
                     (Order.recipient_name.like(like)) |
                     (Order.customer.has(Customer.name.like(like)))
                 )
             orders = query.order_by(Order.delivery_date.desc(), Order.id.desc()).all()
-
             table.setRowCount(len(orders))
             status_colors = {
                 'новый': '#89b4fa', 'принят': '#89dceb', 'собирается': '#f9e2af',
@@ -2411,28 +2122,19 @@ class MainWindow(QMainWindow):
             products = session.query(Product).filter_by(is_active=True).all()
             florists = session.query(Staff).filter(
                 Staff.position.in_(['florist', 'manager']),
-                Staff.is_active == True,
-                Staff.store_id == self.store_id
+                Staff.is_active == True, Staff.store_id == self.store_id
             ).all()
             corporate_clients = session.query(CorporateClient).filter_by(
                 store_id=self.store_id, is_active=True
             ).all()
             store = session.query(Store).get(self.store_id)
-
-            dlg = OrderDialog(
-                customers=customers,
-                products=products,
-                florists=florists,
-                corporate_clients=corporate_clients,
-                store=store,
-                parent=self
-            )
+            dlg = OrderDialog(customers=customers, products=products, florists=florists,
+                              corporate_clients=corporate_clients, store=store, parent=self)
             if dlg.exec_():
                 data = dlg.get_data()
                 if not data['customer_id'] and not data['corporate_client_id']:
                     QMessageBox.warning(self, "Ошибка", "Выберите клиента")
                     return
-                # Если выбран корпоративный клиент, создаём/находим виртуального клиента
                 if not data['customer_id'] and data['corporate_client_id']:
                     corp = session.query(CorporateClient).get(data['corporate_client_id'])
                     customer = session.query(Customer).filter_by(name=f"[{corp.company_name}]").first()
@@ -2441,11 +2143,9 @@ class MainWindow(QMainWindow):
                         session.add(customer)
                         session.flush()
                     data['customer_id'] = customer.id
-
                 order = Order(**data)
                 order.order_number = generate_order_number(session)
                 session.add(order)
-                session.commit()
                 self.refresh_orders()
                 self.refresh_dashboard()
                 self.statusBar().showMessage(f"✅ Заказ {order.order_number} создан", 3000)
@@ -2462,25 +2162,21 @@ class MainWindow(QMainWindow):
                 order = session.query(Order).get(int(order_number))
             if not order:
                 return
-
             customers = session.query(Customer).all()
             products = session.query(Product).filter_by(is_active=True).all()
             florists = session.query(Staff).filter(
                 Staff.position.in_(['florist', 'manager']),
-                Staff.is_active == True,
-                Staff.store_id == self.store_id
+                Staff.is_active == True, Staff.store_id == self.store_id
             ).all()
             corporate_clients = session.query(CorporateClient).filter_by(
                 store_id=self.store_id, is_active=True
             ).all()
             store = session.query(Store).get(self.store_id)
-
             dlg = OrderDialog(order, customers, products, florists, corporate_clients, store, self)
             if dlg.exec_():
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(order, k, v)
-                session.commit()
                 self.refresh_orders()
                 self.refresh_dashboard()
 
@@ -2498,14 +2194,14 @@ class MainWindow(QMainWindow):
                     order = session.query(Order).get(int(order_number))
                 if order:
                     session.delete(order)
-                    session.commit()
-                self.refresh_orders()
-                self.refresh_dashboard()
+                    self.refresh_orders()
+                    self.refresh_dashboard()
 
     def export_orders(self):
         with session_scope() as session:
             orders = session.query(Order).filter(Order.store_id == self.store_id).all()
-            filepath, _ = QFileDialog.getSaveFileName(self, "Экспорт заказов", f"orders_{date.today().isoformat()}.xlsx", "Excel (*.xlsx)")
+            filepath, _ = QFileDialog.getSaveFileName(self, "Экспорт заказов",
+                                                       f"orders_{date.today().isoformat()}.xlsx", "Excel (*.xlsx)")
             if filepath:
                 try:
                     export_orders_to_excel(orders, filepath)
@@ -2529,7 +2225,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка импорта", f"Не удалось импортировать:\n{str(e)}")
 
     # ------------------------------------------------------------------------
-    # 11.9. Вкладка "Клиенты" (физ. лица)
+    # 10.4. Вкладка "Клиенты"
     # ------------------------------------------------------------------------
     def create_customers_tab(self):
         tab = QWidget()
@@ -2537,7 +2233,6 @@ class MainWindow(QMainWindow):
         title = QLabel("👤 Клиенты (физ. лица)")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         search_layout = QHBoxLayout()
         self.customer_search = QLineEdit()
         self.customer_search.setPlaceholderText("🔍 Поиск по имени или телефону...")
@@ -2546,7 +2241,6 @@ class MainWindow(QMainWindow):
         search_layout.addWidget(self.customer_search)
         search_layout.addStretch()
         layout.addLayout(search_layout)
-
         self.customers_table = QTableWidget()
         self.customers_table.setColumnCount(7)
         self.customers_table.setHorizontalHeaderLabels(["ID", "Имя", "Телефон", "Скидка", "VIP", "Заказов", "Потрачено"])
@@ -2555,7 +2249,6 @@ class MainWindow(QMainWindow):
         self.customers_table.setAlternatingRowColors(True)
         self.customers_table.doubleClicked.connect(self.edit_customer)
         layout.addWidget(self.customers_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -2568,7 +2261,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "👤 Клиенты")
 
     def refresh_customers(self):
@@ -2603,8 +2295,7 @@ class MainWindow(QMainWindow):
             with session_scope() as session:
                 new_cust = Customer(**data)
                 session.add(new_cust)
-                session.commit()
-            self.refresh_customers()
+                self.refresh_customers()
 
     def edit_customer(self, row=None, col=None):
         row_idx = row if isinstance(row, int) else self.customers_table.currentRow()
@@ -2622,8 +2313,7 @@ class MainWindow(QMainWindow):
                     return
                 for k, v in data.items():
                     setattr(cust, k, v)
-                session.commit()
-        self.refresh_customers()
+                self.refresh_customers()
 
     def del_customer(self):
         row = self.customers_table.currentRow()
@@ -2636,11 +2326,10 @@ class MainWindow(QMainWindow):
                 cust = session.query(Customer).get(cid)
                 if cust:
                     session.delete(cust)
-                    session.commit()
-            self.refresh_customers()
+                    self.refresh_customers()
 
     # ------------------------------------------------------------------------
-    # 11.10. Вкладка "Каталог"
+    # 10.5. Вкладка "Каталог"
     # ------------------------------------------------------------------------
     def create_products_tab(self):
         tab = QWidget()
@@ -2648,7 +2337,6 @@ class MainWindow(QMainWindow):
         title = QLabel("🌹 Каталог товаров")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         self.products_table = QTableWidget()
         self.products_table.setColumnCount(8)
         self.products_table.setHorizontalHeaderLabels([
@@ -2659,7 +2347,6 @@ class MainWindow(QMainWindow):
         self.products_table.setAlternatingRowColors(True)
         self.products_table.doubleClicked.connect(self.edit_product)
         layout.addWidget(self.products_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -2672,7 +2359,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "🌹 Каталог")
 
     def refresh_products(self):
@@ -2706,8 +2392,7 @@ class MainWindow(QMainWindow):
             with session_scope() as session:
                 p = Product(**data)
                 session.add(p)
-                session.commit()
-            self.refresh_products()
+                self.refresh_products()
 
     def edit_product(self, row=None, col=None):
         row_idx = row if isinstance(row, int) else self.products_table.currentRow()
@@ -2723,8 +2408,7 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(p, k, v)
-                session.commit()
-        self.refresh_products()
+                self.refresh_products()
 
     def del_product(self):
         row = self.products_table.currentRow()
@@ -2737,11 +2421,10 @@ class MainWindow(QMainWindow):
                 p = session.query(Product).get(pid)
                 if p:
                     session.delete(p)
-                    session.commit()
-            self.refresh_products()
+                    self.refresh_products()
 
     # ------------------------------------------------------------------------
-    # 11.11. Вкладка "Склад"
+    # 10.6. Вкладка "Склад"
     # ------------------------------------------------------------------------
     def create_inventory_tab(self):
         tab = QWidget()
@@ -2749,7 +2432,6 @@ class MainWindow(QMainWindow):
         title = QLabel("📦 Склад")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         self.inventory_table = QTableWidget()
         self.inventory_table.setColumnCount(9)
         self.inventory_table.setHorizontalHeaderLabels([
@@ -2760,7 +2442,6 @@ class MainWindow(QMainWindow):
         self.inventory_table.setAlternatingRowColors(True)
         self.inventory_table.doubleClicked.connect(self.edit_inventory)
         layout.addWidget(self.inventory_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -2773,7 +2454,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "📦 Склад")
 
     def refresh_inventory(self):
@@ -2811,9 +2491,8 @@ class MainWindow(QMainWindow):
                     return
                 item = InventoryItem(**data)
                 session.add(item)
-                session.commit()
-        self.refresh_inventory()
-        self.refresh_dashboard()
+                self.refresh_inventory()
+                self.refresh_dashboard()
 
     def edit_inventory(self, row=None, col=None):
         row_idx = row if isinstance(row, int) else self.inventory_table.currentRow()
@@ -2831,9 +2510,8 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(item, k, v)
-                session.commit()
-        self.refresh_inventory()
-        self.refresh_dashboard()
+                self.refresh_inventory()
+                self.refresh_dashboard()
 
     def del_inventory(self):
         row = self.inventory_table.currentRow()
@@ -2846,12 +2524,11 @@ class MainWindow(QMainWindow):
                 item = session.query(InventoryItem).get(iid)
                 if item:
                     session.delete(item)
-                    session.commit()
-            self.refresh_inventory()
-            self.refresh_dashboard()
+                    self.refresh_inventory()
+                    self.refresh_dashboard()
 
     # ------------------------------------------------------------------------
-    # 11.12. Вкладка "Поставщики"
+    # 10.7. Вкладка "Поставщики"
     # ------------------------------------------------------------------------
     def create_suppliers_tab(self):
         tab = QWidget()
@@ -2859,7 +2536,6 @@ class MainWindow(QMainWindow):
         title = QLabel("🚚 Поставщики")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         self.suppliers_table = QTableWidget()
         self.suppliers_table.setColumnCount(5)
         self.suppliers_table.setHorizontalHeaderLabels(["ID", "Название", "Контакт", "Телефон", "Адрес"])
@@ -2868,7 +2544,6 @@ class MainWindow(QMainWindow):
         self.suppliers_table.setAlternatingRowColors(True)
         self.suppliers_table.doubleClicked.connect(self.edit_supplier)
         layout.addWidget(self.suppliers_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -2881,7 +2556,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "🚚 Поставщики")
 
     def refresh_suppliers(self):
@@ -2905,8 +2579,7 @@ class MainWindow(QMainWindow):
             with session_scope() as session:
                 s = Supplier(**data)
                 session.add(s)
-                session.commit()
-            self.refresh_suppliers()
+                self.refresh_suppliers()
 
     def edit_supplier(self, row=None, col=None):
         row_idx = row if isinstance(row, int) else self.suppliers_table.currentRow()
@@ -2922,8 +2595,7 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(s, k, v)
-                session.commit()
-        self.refresh_suppliers()
+                self.refresh_suppliers()
 
     def del_supplier(self):
         row = self.suppliers_table.currentRow()
@@ -2936,11 +2608,10 @@ class MainWindow(QMainWindow):
                 s = session.query(Supplier).get(sid)
                 if s:
                     session.delete(s)
-                    session.commit()
-            self.refresh_suppliers()
+                    self.refresh_suppliers()
 
     # ------------------------------------------------------------------------
-    # 11.13. Вкладка "Расходы"
+    # 10.8. Вкладка "Расходы"
     # ------------------------------------------------------------------------
     def create_expenses_tab(self):
         tab = QWidget()
@@ -2948,7 +2619,6 @@ class MainWindow(QMainWindow):
         title = QLabel("💸 Расходы")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         self.expenses_table = QTableWidget()
         self.expenses_table.setColumnCount(6)
         self.expenses_table.setHorizontalHeaderLabels(["ID", "Дата", "Категория", "Сумма", "Описание", "Поставщик"])
@@ -2957,7 +2627,6 @@ class MainWindow(QMainWindow):
         self.expenses_table.setAlternatingRowColors(True)
         self.expenses_table.doubleClicked.connect(self.edit_expense)
         layout.addWidget(self.expenses_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -2970,7 +2639,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "💸 Расходы")
 
     def refresh_expenses(self):
@@ -2999,9 +2667,8 @@ class MainWindow(QMainWindow):
                     return
                 e = Expense(**data)
                 session.add(e)
-                session.commit()
-        self.refresh_expenses()
-        self.refresh_dashboard()
+                self.refresh_expenses()
+                self.refresh_dashboard()
 
     def edit_expense(self, row=None, col=None):
         row_idx = row if isinstance(row, int) else self.expenses_table.currentRow()
@@ -3019,9 +2686,8 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(e, k, v)
-                session.commit()
-        self.refresh_expenses()
-        self.refresh_dashboard()
+                self.refresh_expenses()
+                self.refresh_dashboard()
 
     def del_expense(self):
         row = self.expenses_table.currentRow()
@@ -3034,12 +2700,11 @@ class MainWindow(QMainWindow):
                 e = session.query(Expense).get(eid)
                 if e:
                     session.delete(e)
-                    session.commit()
-            self.refresh_expenses()
-            self.refresh_dashboard()
+                    self.refresh_expenses()
+                    self.refresh_dashboard()
 
     # ------------------------------------------------------------------------
-    # 11.14. Вкладка "Сотрудники магазина"
+    # 10.9. Вкладка "Сотрудники магазина"
     # ------------------------------------------------------------------------
     def create_staff_tab(self):
         tab = QWidget()
@@ -3047,7 +2712,6 @@ class MainWindow(QMainWindow):
         title = QLabel("👥 Сотрудники магазина")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         self.staff_table = QTableWidget()
         self.staff_table.setColumnCount(7)
         self.staff_table.setHorizontalHeaderLabels(["ID", "ФИО", "Должность", "Телефон", "Зарплата", "Дата найма", "Активен"])
@@ -3056,7 +2720,6 @@ class MainWindow(QMainWindow):
         self.staff_table.setAlternatingRowColors(True)
         self.staff_table.doubleClicked.connect(self.edit_staff)
         layout.addWidget(self.staff_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -3069,7 +2732,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "👥 Сотрудники")
 
     def refresh_staff(self):
@@ -3091,17 +2753,17 @@ class MainWindow(QMainWindow):
                 self.staff_table.setItem(i, 6, active_item)
 
     def add_staff(self):
-        dlg = StaffDialog(store=None, parent=self)
-        if dlg.exec_():
-            data = dlg.get_data()
-            if not data['full_name']:
-                QMessageBox.warning(self, "Ошибка", "Введите ФИО")
-                return
-            with session_scope() as session:
+        with session_scope() as session:
+            store = session.query(Store).get(self.store_id)
+            dlg = StaffDialog(store=store, parent=self)
+            if dlg.exec_():
+                data = dlg.get_data()
+                if not data['full_name']:
+                    QMessageBox.warning(self, "Ошибка", "Введите ФИО")
+                    return
                 staff = Staff(**data)
                 session.add(staff)
-                session.commit()
-            self.refresh_staff()
+                self.refresh_staff()
 
     def edit_staff(self, row=None, col=None):
         row_idx = row if isinstance(row, int) else self.staff_table.currentRow()
@@ -3112,13 +2774,13 @@ class MainWindow(QMainWindow):
             staff = session.query(Staff).get(sid)
             if not staff:
                 return
-            dlg = StaffDialog(staff, None, self)
+            store = session.query(Store).get(self.store_id)
+            dlg = StaffDialog(staff, store, self)
             if dlg.exec_():
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(staff, k, v)
-                session.commit()
-        self.refresh_staff()
+                self.refresh_staff()
 
     def del_staff(self):
         row = self.staff_table.currentRow()
@@ -3131,31 +2793,22 @@ class MainWindow(QMainWindow):
                 staff = session.query(Staff).get(sid)
                 if staff:
                     session.delete(staff)
-                    session.commit()
-            self.refresh_staff()
+                    self.refresh_staff()
 
     # ------------------------------------------------------------------------
-    # 11.15. Вкладка "B2B" (Корпоративные клиенты)
+    # 10.10. Вкладка "B2B" (Корпоративные клиенты)
     # ------------------------------------------------------------------------
     def create_corporate_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
         title = QLabel("🏢 Корпоративные клиенты (B2B)")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
-        info = QLabel(
-            "💡 Сервис корпоративных поздравлений по подписке: ведём календарь ДР сотрудников, готовим букеты, доставляем. "
-            "Доход стабилен и предсказуем."
-        )
+        info = QLabel("💡 Сервис корпоративных поздравлений по подписке: ведём календарь ДР сотрудников, готовим букеты, доставляем. Доход стабилен и предсказуем.")
         info.setWordWrap(True)
         info.setStyleSheet("color: #89b4fa; padding: 8px; background: #313244; border-radius: 6px;")
         layout.addWidget(info)
-
         splitter = QSplitter(Qt.Vertical)
-
-        # Компании
         companies_box = QGroupBox("Компании-клиенты")
         companies_layout = QVBoxLayout(companies_box)
         self.corp_table = QTableWidget()
@@ -3166,7 +2819,6 @@ class MainWindow(QMainWindow):
         self.corp_table.setAlternatingRowColors(True)
         self.corp_table.doubleClicked.connect(self.edit_corporate_client)
         companies_layout.addWidget(self.corp_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить компанию")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -3183,8 +2835,6 @@ class MainWindow(QMainWindow):
         btn_layout.addStretch()
         companies_layout.addLayout(btn_layout)
         splitter.addWidget(companies_box)
-
-        # Сотрудники компаний
         employees_box = QGroupBox("Сотрудники компании (для автопоздравлений)")
         employees_layout = QVBoxLayout(employees_box)
         self.corp_emp_table = QTableWidget()
@@ -3195,7 +2845,6 @@ class MainWindow(QMainWindow):
         self.corp_emp_table.setAlternatingRowColors(True)
         self.corp_emp_table.doubleClicked.connect(self.edit_corporate_employee)
         employees_layout.addWidget(self.corp_emp_table)
-
         emp_btn_layout = QHBoxLayout()
         add_emp_btn = QPushButton("➕ Добавить сотрудника")
         edit_emp_btn = QPushButton("✏️ Редактировать")
@@ -3209,13 +2858,9 @@ class MainWindow(QMainWindow):
         emp_btn_layout.addStretch()
         employees_layout.addLayout(emp_btn_layout)
         splitter.addWidget(employees_box)
-
         splitter.setSizes([400, 300])
         layout.addWidget(splitter)
-
-        # При выборе компании загружаем её сотрудников
         self.corp_table.itemSelectionChanged.connect(self.on_corp_selected)
-
         self.tabs.addTab(tab, "🏢 B2B")
 
     def on_corp_selected(self):
@@ -3254,7 +2899,7 @@ class MainWindow(QMainWindow):
                 self.corp_table.setItem(i, 6, QTableWidgetItem(str(emp_count)))
                 debt = sum(inv.amount for inv in c.invoices if not inv.paid)
                 self.corp_table.setItem(i, 7, QTableWidgetItem(f"{debt:,.0f} ₽"))
-        self.on_corp_selected()
+            self.on_corp_selected()
 
     def _get_selected_corp_client_id(self):
         row = self.corp_table.currentRow()
@@ -3266,7 +2911,11 @@ class MainWindow(QMainWindow):
     def add_corporate_client(self):
         with session_scope() as session:
             store = session.query(Store).get(self.store_id)
-            managers = session.query(Staff).filter_by(position='manager', is_active=True).all()
+            # Менеджеры могут быть как с должностью 'manager', так и 'director'
+            managers = session.query(Staff).filter(
+                Staff.position.in_(['manager', 'director']),
+                Staff.is_active == True
+            ).all()
             dlg = CorporateClientDialog(store=store, managers=managers, parent=self)
             if dlg.exec_():
                 data = dlg.get_data()
@@ -3275,8 +2924,7 @@ class MainWindow(QMainWindow):
                     return
                 client = CorporateClient(**data)
                 session.add(client)
-                session.commit()
-            self.refresh_corporate()
+                self.refresh_corporate()
 
     def edit_corporate_client(self):
         cid = self._get_selected_corp_client_id()
@@ -3287,14 +2935,16 @@ class MainWindow(QMainWindow):
             if not client:
                 return
             store = session.query(Store).get(self.store_id)
-            managers = session.query(Staff).filter_by(position='manager', is_active=True).all()
+            managers = session.query(Staff).filter(
+                Staff.position.in_(['manager', 'director']),
+                Staff.is_active == True
+            ).all()
             dlg = CorporateClientDialog(client, store, managers, self)
             if dlg.exec_():
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(client, k, v)
-                session.commit()
-        self.refresh_corporate()
+                self.refresh_corporate()
 
     def del_corporate_client(self):
         cid = self._get_selected_corp_client_id()
@@ -3306,8 +2956,7 @@ class MainWindow(QMainWindow):
                 client = session.query(CorporateClient).get(cid)
                 if client:
                     session.delete(client)
-                    session.commit()
-            self.refresh_corporate()
+                    self.refresh_corporate()
 
     def export_corporate_proposal(self):
         cid = self._get_selected_corp_client_id()
@@ -3338,9 +2987,8 @@ class MainWindow(QMainWindow):
             with session_scope() as session:
                 emp = CorporateEmployee(client_id=cid, **data)
                 session.add(emp)
-                session.commit()
-        self.on_corp_selected()
-        self.refresh_corporate()
+                self.on_corp_selected()
+                self.refresh_corporate()
 
     def edit_corporate_employee(self):
         cid = self._get_selected_corp_client_id()
@@ -3360,8 +3008,7 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(emp, k, v)
-                session.commit()
-        self.on_corp_selected()
+                self.on_corp_selected()
 
     def del_corporate_employee(self):
         row = self.corp_emp_table.currentRow()
@@ -3374,12 +3021,11 @@ class MainWindow(QMainWindow):
                 emp = session.query(CorporateEmployee).get(eid)
                 if emp:
                     session.delete(emp)
-                    session.commit()
-        self.on_corp_selected()
-        self.refresh_corporate()
+                    self.on_corp_selected()
+                    self.refresh_corporate()
 
     # ------------------------------------------------------------------------
-    # 11.16. Вкладка "Счета"
+    # 10.11. Вкладка "Счета"
     # ------------------------------------------------------------------------
     def create_invoices_tab(self):
         tab = QWidget()
@@ -3387,7 +3033,6 @@ class MainWindow(QMainWindow):
         title = QLabel("💳 Счета для корпоративных клиентов")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         self.invoices_table = QTableWidget()
         self.invoices_table.setColumnCount(7)
         self.invoices_table.setHorizontalHeaderLabels(["Номер", "Дата", "Срок", "Компания", "Сумма", "Статус", "Описание"])
@@ -3396,7 +3041,6 @@ class MainWindow(QMainWindow):
         self.invoices_table.setAlternatingRowColors(True)
         self.invoices_table.doubleClicked.connect(self.edit_invoice)
         layout.addWidget(self.invoices_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Выставить счёт")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -3412,7 +3056,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "💳 Счета")
 
     def refresh_invoices(self):
@@ -3458,7 +3101,6 @@ class MainWindow(QMainWindow):
                         pass
                 invoice.invoice_number = f'INV-{today_str}-{num:03d}'
                 session.add(invoice)
-                session.commit()
                 self.refresh_invoices()
                 self.refresh_dashboard()
 
@@ -3477,7 +3119,6 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 for k, v in data.items():
                     setattr(invoice, k, v)
-                session.commit()
                 self.refresh_invoices()
                 self.refresh_dashboard()
 
@@ -3491,7 +3132,6 @@ class MainWindow(QMainWindow):
             if invoice:
                 invoice.paid = not invoice.paid
                 invoice.paid_date = date.today() if invoice.paid else None
-                session.commit()
                 self.refresh_invoices()
                 self.refresh_dashboard()
 
@@ -3506,26 +3146,22 @@ class MainWindow(QMainWindow):
                 invoice = session.query(Invoice).filter_by(invoice_number=inv_number).first()
                 if invoice:
                     session.delete(invoice)
-                    session.commit()
-                self.refresh_invoices()
-                self.refresh_dashboard()
+                    self.refresh_invoices()
+                    self.refresh_dashboard()
 
     # ------------------------------------------------------------------------
-    # 11.17. Вкладка "Праздники"
+    # 10.12. Вкладка "Праздники"
     # ------------------------------------------------------------------------
     def create_holidays_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
         title = QLabel("🎉 Праздники и массовые заказы")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         info = QLabel("Здесь вы можете управлять праздниками и создавать массовые заказы для всех сотрудников корпоративных клиентов.")
         info.setWordWrap(True)
         info.setStyleSheet("color: #89b4fa; padding: 8px; background: #313244; border-radius: 6px;")
         layout.addWidget(info)
-
         self.holidays_table = QTableWidget()
         self.holidays_table.setColumnCount(5)
         self.holidays_table.setHorizontalHeaderLabels(["ID", "Название", "Дата", "Дней подготовки", "Заметки"])
@@ -3533,7 +3169,6 @@ class MainWindow(QMainWindow):
         self.holidays_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.holidays_table.setAlternatingRowColors(True)
         layout.addWidget(self.holidays_table)
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить праздник")
         edit_btn = QPushButton("✏️ Редактировать")
@@ -3550,7 +3185,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(mass_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.tabs.addTab(tab, "🎉 Праздники")
 
     def refresh_holidays(self):
@@ -3570,7 +3204,6 @@ class MainWindow(QMainWindow):
         dlg.setWindowTitle("Новый праздник")
         dlg.setMinimumWidth(400)
         layout = QFormLayout(dlg)
-
         name_edit = QLineEdit()
         month_combo = QComboBox()
         months = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -3584,13 +3217,11 @@ class MainWindow(QMainWindow):
         days_before.setValue(7)
         notes_edit = QTextEdit()
         notes_edit.setMaximumHeight(80)
-
         layout.addRow("Название:", name_edit)
         layout.addRow("Месяц:", month_combo)
         layout.addRow("День:", day_spin)
         layout.addRow("За сколько дней готовить:", days_before)
         layout.addRow("Заметки:", notes_edit)
-
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -3599,7 +3230,6 @@ class MainWindow(QMainWindow):
         btn_box.addWidget(ok_btn)
         btn_box.addWidget(cancel_btn)
         layout.addRow(btn_box)
-
         if dlg.exec_():
             if not name_edit.text():
                 return
@@ -3612,8 +3242,7 @@ class MainWindow(QMainWindow):
                     notes=notes_edit.toPlainText()
                 )
                 session.add(h)
-                session.commit()
-            self.refresh_holidays()
+                self.refresh_holidays()
 
     def edit_holiday(self):
         row = self.holidays_table.currentRow()
@@ -3624,12 +3253,10 @@ class MainWindow(QMainWindow):
             h = session.query(Holiday).get(hid)
             if not h:
                 return
-
             dlg = QDialog(self)
             dlg.setWindowTitle("Редактировать праздник")
             dlg.setMinimumWidth(400)
             layout = QFormLayout(dlg)
-
             name_edit = QLineEdit(h.name)
             month_combo = QComboBox()
             months = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -3646,13 +3273,11 @@ class MainWindow(QMainWindow):
             notes_edit = QTextEdit()
             notes_edit.setPlainText(h.notes or '')
             notes_edit.setMaximumHeight(80)
-
             layout.addRow("Название:", name_edit)
             layout.addRow("Месяц:", month_combo)
             layout.addRow("День:", day_spin)
             layout.addRow("За сколько дней:", days_before)
             layout.addRow("Заметки:", notes_edit)
-
             btn_box = QHBoxLayout()
             ok_btn = QPushButton("💾 Сохранить")
             cancel_btn = QPushButton("Отмена")
@@ -3661,15 +3286,13 @@ class MainWindow(QMainWindow):
             btn_box.addWidget(ok_btn)
             btn_box.addWidget(cancel_btn)
             layout.addRow(btn_box)
-
             if dlg.exec_():
                 h.name = name_edit.text()
                 h.date_month = month_combo.currentData()
                 h.date_day = day_spin.value()
                 h.days_before = days_before.value()
                 h.notes = notes_edit.toPlainText()
-                session.commit()
-            self.refresh_holidays()
+                self.refresh_holidays()
 
     def del_holiday(self):
         row = self.holidays_table.currentRow()
@@ -3682,8 +3305,7 @@ class MainWindow(QMainWindow):
                 h = session.query(Holiday).get(hid)
                 if h:
                     session.delete(h)
-                    session.commit()
-            self.refresh_holidays()
+                    self.refresh_holidays()
 
     def create_mass_orders_dialog(self):
         with session_scope() as session:
@@ -3691,39 +3313,31 @@ class MainWindow(QMainWindow):
             if not holidays:
                 QMessageBox.warning(self, "Внимание", "Сначала добавьте праздники")
                 return
-
             dlg = QDialog(self)
             dlg.setWindowTitle("Массовые заказы на праздник")
             dlg.setMinimumWidth(500)
             layout = QFormLayout(dlg)
-
             holiday_combo = QComboBox()
             months = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
                       'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
             for h in holidays:
                 holiday_combo.addItem(f"{h.name} ({h.date_day} {months[h.date_month]})", h.id)
-
             year_spin = QSpinBox()
             year_spin.setRange(2024, 2030)
             year_spin.setValue(date.today().year)
-
             bouquet_edit = QLineEdit()
             bouquet_edit.setPlaceholderText("Например: Весенний букет")
-
             amount_spin = QDoubleSpinBox()
             amount_spin.setRange(0, 100000)
             amount_spin.setPrefix("₽ ")
-            amount_spin.setValue(0)  # 0 — использовать цену компании
-
+            amount_spin.setValue(0)
             target_combo = QComboBox()
             target_combo.addItems(["Все сотрудники", "Только женщины (8 марта)", "Только мужчины (23 февраля)"])
-
             layout.addRow("Праздник:", holiday_combo)
             layout.addRow("Год:", year_spin)
             layout.addRow("Букет (название):", bouquet_edit)
             layout.addRow("Сумма (0 - использовать цену компании):", amount_spin)
             layout.addRow("Получатели:", target_combo)
-
             btn_box = QHBoxLayout()
             ok_btn = QPushButton("🎁 Создать заказы")
             cancel_btn = QPushButton("Отмена")
@@ -3732,7 +3346,6 @@ class MainWindow(QMainWindow):
             btn_box.addWidget(ok_btn)
             btn_box.addWidget(cancel_btn)
             layout.addRow(btn_box)
-
             if dlg.exec_():
                 holiday_id = holiday_combo.currentData()
                 year = year_spin.value()
@@ -3744,34 +3357,29 @@ class MainWindow(QMainWindow):
                     target_gender = 'female'
                 elif "Только мужчины" in target_text:
                     target_gender = 'male'
-
                 count, msg = create_mass_orders(holiday_id, year, bouquet, amount, target_gender)
                 QMessageBox.information(self, "Результат", msg)
                 self.refresh_all()
 
     # ------------------------------------------------------------------------
-    # 11.18. Вкладка "Статистика"
+    # 10.13. Вкладка "Статистика"
     # ------------------------------------------------------------------------
     def create_statistics_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
         title = QLabel("📊 Аналитика и отчёты")
         title.setStyleSheet("font-size: 20px; font-weight: bold; color: #f38ba8;")
         layout.addWidget(title)
-
         split = QHBoxLayout()
         self.figure1 = Figure(figsize=(7, 4), dpi=100)
         self.figure1.patch.set_facecolor('#1e1e2e')
         self.canvas1 = FigureCanvas(self.figure1)
         split.addWidget(self.canvas1)
-
         self.figure2 = Figure(figsize=(5, 4), dpi=100)
         self.figure2.patch.set_facecolor('#1e1e2e')
         self.canvas2 = FigureCanvas(self.figure2)
         split.addWidget(self.canvas2)
         layout.addLayout(split)
-
         abc_box = QGroupBox("📈 ABC-анализ товаров (какие приносят 80% прибыли)")
         abc_layout = QVBoxLayout(abc_box)
         self.abc_table = QTableWidget()
@@ -3782,11 +3390,9 @@ class MainWindow(QMainWindow):
         self.abc_table.setMaximumHeight(200)
         abc_layout.addWidget(self.abc_table)
         layout.addWidget(abc_box)
-
         refresh_btn = QPushButton("🔄 Обновить графики")
         refresh_btn.clicked.connect(self.refresh_statistics)
         layout.addWidget(refresh_btn)
-
         self.tabs.addTab(tab, "📊 Статистика")
 
     def refresh_statistics(self):
@@ -3796,9 +3402,7 @@ class MainWindow(QMainWindow):
         profits = []
         expenses_list = []
         corp_revenues = []
-
         with session_scope() as session:
-            # Сбор данных за последние 6 месяцев
             for i in range(5, -1, -1):
                 m = today.month - i
                 y = today.year
@@ -3807,7 +3411,6 @@ class MainWindow(QMainWindow):
                     y -= 1
                 start = date(y, m, 1)
                 end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
-
                 orders = session.query(Order).filter(
                     Order.store_id == self.store_id,
                     Order.delivery_date >= start,
@@ -3821,14 +3424,11 @@ class MainWindow(QMainWindow):
                     Expense.date >= start, Expense.date < end
                 ).all())
                 corp_rev = sum(o.amount or 0 for o in orders if o.corporate_client_id is not None)
-
                 months.append(start.strftime('%b %Y'))
                 revenues.append(rev)
                 profits.append(rev - cost - exp)
                 expenses_list.append(exp)
                 corp_revenues.append(corp_rev)
-
-            # График 1: финансы
             self.figure1.clear()
             ax = self.figure1.add_subplot(111)
             ax.set_facecolor('#1e1e2e')
@@ -3846,8 +3446,6 @@ class MainWindow(QMainWindow):
                 spine.set_color('#45475a')
             self.figure1.tight_layout()
             self.canvas1.draw()
-
-            # График 2: статусы заказов
             status_counts = {}
             for st in OrderDialog.STATUSES:
                 status_counts[st] = session.query(Order).filter_by(store_id=self.store_id, status=st).count()
@@ -3863,21 +3461,17 @@ class MainWindow(QMainWindow):
                 ax2.text(0.5, 0.5, 'Нет заказов', ha='center', va='center', color='#cdd6f4', transform=ax2.transAxes)
             self.figure2.tight_layout()
             self.canvas2.draw()
-
-            # ABC-анализ
             products = session.query(Product).all()
             product_stats = []
             for p in products:
                 orders = session.query(Order).filter(
-                    Order.product_id == p.id,
-                    Order.status == 'доставлен'
+                    Order.product_id == p.id, Order.status == 'доставлен'
                 ).all()
                 qty = sum(o.quantity or 0 for o in orders)
                 revenue = sum(o.amount or 0 for o in orders)
                 profit = sum(o.profit for o in orders)
                 if qty > 0:
                     product_stats.append((p, qty, revenue, profit))
-
             product_stats.sort(key=lambda x: x[3], reverse=True)
             total_profit = sum(x[3] for x in product_stats)
             if total_profit > 0:
@@ -3912,25 +3506,22 @@ class MainWindow(QMainWindow):
                 self.abc_table.setRowCount(0)
 
     # ------------------------------------------------------------------------
-    # 11.19. Управление пользователями (только админ)
+    # 10.14. Управление пользователями (только админ)
     # ------------------------------------------------------------------------
     def show_users(self):
         if self.role != 'admin':
             QMessageBox.warning(self, "Доступ запрещён", "Только администратор может управлять пользователями")
             return
-
         dlg = QDialog(self)
         dlg.setWindowTitle("👥 Управление пользователями")
         dlg.setMinimumSize(700, 500)
         layout = QVBoxLayout(dlg)
-
         table = QTableWidget()
         table.setColumnCount(5)
         table.setHorizontalHeaderLabels(["ID", "Логин", "ФИО", "Роль", "Активен"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(table)
-
         def refresh():
             with session_scope() as session:
                 users = session.query(User).all()
@@ -3942,7 +3533,6 @@ class MainWindow(QMainWindow):
                     table.setItem(i, 3, QTableWidgetItem(u.role))
                     table.setItem(i, 4, QTableWidgetItem("✅" if u.is_active else "❌"))
         refresh()
-
         btn_layout = QHBoxLayout()
         add_btn = QPushButton("➕ Добавить")
         toggle_btn = QPushButton("🔒 Вкл/Выкл")
@@ -3950,7 +3540,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(toggle_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         def add_user():
             new_dlg = QDialog(dlg)
             new_dlg.setWindowTitle("Новый пользователь")
@@ -3986,9 +3575,7 @@ class MainWindow(QMainWindow):
                         role=role_combo.currentText()
                     )
                     session.add(u)
-                    session.commit()
-                refresh()
-
+                    refresh()
         def toggle_user():
             row = table.currentRow()
             if row < 0:
@@ -4000,15 +3587,13 @@ class MainWindow(QMainWindow):
                     QMessageBox.warning(dlg, "Ошибка", "Нельзя деактивировать самого себя")
                     return
                 u.is_active = not u.is_active
-                session.commit()
-            refresh()
-
+                refresh()
         add_btn.clicked.connect(add_user)
         toggle_btn.clicked.connect(toggle_user)
         dlg.exec_()
 
     # ------------------------------------------------------------------------
-    # 11.20. Выход
+    # 10.15. Выход
     # ------------------------------------------------------------------------
     def logout(self):
         reply = QMessageBox.question(self, "Выход", "Выйти из системы?", QMessageBox.Yes | QMessageBox.No)
@@ -4038,49 +3623,84 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-# ----------------------------------------------------------------------------
-# 12. Точка входа
-# ----------------------------------------------------------------------------
+# ============================================================================
+# 11. ТОЧКА ВХОДА
+# ============================================================================
 def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 
     # При первом запуске создаём начальные данные
-    with session_scope() as session:
-        if session.query(Store).count() == 0:
-            store = Store(
-                name="Muzflowers",
-                address="г. Москва, ул. Земляной Вал, 39/1с1",
-                phone="+7 (995) 152-21-31"
-            )
-            session.add(store)
-            session.commit()
-            print("✅ Создан розничный магазин Muzflowers")
+    try:
+        with session_scope() as session:
+            # Создаём магазин
+            if session.query(Store).count() == 0:
+                store = Store(
+                    name="Muzflowers",
+                    address="г. Москва, ул. Земляной Вал, 39/1с1",
+                    phone="+7 (995) 152-21-31"
+                )
+                session.add(store)
+                print("✅ Создан розничный магазин Muzflowers")
 
-        if session.query(User).count() == 0:
-            admin = User(username='admin', password_hash=hash_password('admin123'), full_name='Администратор', role='admin')
-            manager = User(username='manager', password_hash=hash_password('manager123'), full_name='Менеджер', role='manager')
-            florist_user = User(username='florist', password_hash=hash_password('florist123'), full_name='Флорист', role='florist')
-            session.add_all([admin, manager, florist_user])
-            session.commit()
+            # Создаём пользователей (если их ещё нет)
+            if session.query(User).count() == 0:
+                admin = User(username='admin', password_hash=hash_password('admin123'),
+                             full_name='Администратор', role='admin')
+                manager = User(username='manager', password_hash=hash_password('manager123'),
+                               full_name='Менеджер', role='manager')
+                florist_user = User(username='florist', password_hash=hash_password('florist123'),
+                                    full_name='Флорист', role='florist')
+                session.add_all([admin, manager, florist_user])
+                print("✅ Созданы пользователи: admin, manager, florist")
 
+            # Создаём сотрудников (без дублирования user_id!)
             store = session.query(Store).first()
-            florist = Staff(user_id=florist_user.id, store_id=store.id, full_name='Флорист Мария', position='florist', phone='+7 (999) 111-22-33', salary=60000)
-            manager_staff = Staff(user_id=manager.id, store_id=store.id, full_name='Менеджер Анна', position='manager', phone='+7 (999) 777-88-99', salary=80000)
-            session.add_all([florist, manager_staff])
+            if store and session.query(Staff).count() == 0:
+                admin_user = session.query(User).filter_by(username='admin').first()
+                manager_user = session.query(User).filter_by(username='manager').first()
+                florist_user = session.query(User).filter_by(username='florist').first()
 
-            # Начальные праздники
-            holidays = [
-                Holiday(name="8 Марта", date_month=3, date_day=8, days_before=14, notes="Международный женский день"),
-                Holiday(name="14 Февраля", date_month=2, date_day=14, days_before=7, notes="День всех влюблённых"),
-                Holiday(name="23 Февраля", date_month=2, date_day=23, days_before=7, notes="День защитника Отечества"),
-                Holiday(name="9 Мая", date_month=5, date_day=9, days_before=10, notes="День Победы"),
-                Holiday(name="1 Сентября", date_month=9, date_day=1, days_before=14, notes="День знаний"),
-                Holiday(name="Новый год", date_month=12, date_day=31, days_before=14, notes="Главный праздник года"),
-            ]
-            session.add_all(holidays)
-            session.commit()
-            print("✅ Созданы пользователи, сотрудники и праздники")
+                # Сотрудник 1: флорист с логином
+                staff1 = Staff(user_id=florist_user.id, store_id=store.id,
+                               full_name='Наталья Боброва', position='florist',
+                               phone='+7 (917) 549-49-41', salary=60000)
+                # Сотрудник 2: менеджер с логином
+                staff2 = Staff(user_id=manager_user.id, store_id=store.id,
+                               full_name='Михаил', position='manager',
+                               phone='+7 (961) 352-89-10', salary=80000)
+                # Сотрудник 3: директор с логином администратора
+                staff3 = Staff(user_id=admin_user.id, store_id=store.id,
+                               full_name='Сергей', position='director',
+                               phone='+7 (916) 162-21-31', salary=100000)
+                # Сотрудники БЕЗ привязки к пользователям (user_id=None)
+                staff4 = Staff(store_id=store.id, full_name='Наталья', position='florist',
+                               phone='+7 (995) 152-21-31', salary=60000)
+                staff5 = Staff(store_id=store.id, full_name='Клим', position='manager',
+                               phone='+7 (916) 198-51-56', salary=80000)
+                staff6 = Staff(store_id=store.id, full_name='Николай', position='director',
+                               phone='+7 (916) 255-86-84', salary=100000)
+                session.add_all([staff1, staff2, staff3, staff4, staff5, staff6])
+                print("✅ Созданы сотрудники (включая директоров Сергея и Николая)")
+
+            # Создаём праздники
+            if session.query(Holiday).count() == 0:
+                holidays = [
+                    Holiday(name="8 Марта", date_month=3, date_day=8, days_before=14, notes="Международный женский день"),
+                    Holiday(name="14 Февраля", date_month=2, date_day=14, days_before=7, notes="День всех влюблённых"),
+                    Holiday(name="23 Февраля", date_month=2, date_day=23, days_before=7, notes="День защитника Отечества"),
+                    Holiday(name="9 Мая", date_month=5, date_day=9, days_before=10, notes="День Победы"),
+                    Holiday(name="1 Сентября", date_month=9, date_day=1, days_before=14, notes="День знаний"),
+                    Holiday(name="Новый год", date_month=12, date_day=31, days_before=14, notes="Главный праздник года"),
+                ]
+                session.add_all(holidays)
+                print("✅ Созданы праздники")
+    except IntegrityError as e:
+        print(f"⚠️ Данные уже существуют (это нормально при повторном запуске): {e}")
+    except Exception as e:
+        print(f"❌ Ошибка инициализации БД: {e}")
+        import traceback
+        traceback.print_exc()
 
     login = LoginDialog()
     if login.exec_() == QDialog.Accepted:
