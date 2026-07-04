@@ -39,7 +39,6 @@ except ImportError:
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.utils import get_column_letter
 
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -121,7 +120,6 @@ QProgressBar::chunk { background-color: #05BE9B; border-radius: 3px; }
 # ============================================================================
 Base = declarative_base()
 
-
 class Store(Base):
     """Магазин"""
     __tablename__ = 'stores'
@@ -136,7 +134,6 @@ class Store(Base):
     expenses = relationship('Expense', back_populates='store')
     corporate_clients = relationship('CorporateClient', back_populates='store')
 
-
 class User(Base):
     """Пользователь системы (для входа)"""
     __tablename__ = 'users'
@@ -147,7 +144,6 @@ class User(Base):
     role = Column(String(20), default='admin')
     is_active = Column(Boolean, default=True)
     staff_profile = relationship('Staff', back_populates='user', uselist=False, cascade='all, delete-orphan')
-
 
 class Staff(Base):
     """Сотрудник магазина (флорист или менеджер)"""
@@ -168,7 +164,6 @@ class Staff(Base):
     def position_display(self):
         return {'florist': '🌸 Флорист', 'manager': '👔 Менеджер', 'admin': '👑 Директор'}.get(self.position, self.position or '—')
 
-
 class Customer(Base):
     """Клиент (физическое лицо)"""
     __tablename__ = 'customers'
@@ -185,7 +180,6 @@ class Customer(Base):
     @property
     def total_spent(self):
         return sum(o.amount or 0 for o in self.orders if o.status == 'доставлен')
-
 
 class Product(Base):
     """Товар (букет, композиция, набор)"""
@@ -210,7 +204,6 @@ class Product(Base):
         if self.cost_price and self.cost_price > 0:
             return (self.margin / self.cost_price) * 100
         return 0
-
 
 class Order(Base):
     """Заказ"""
@@ -260,7 +253,6 @@ class Order(Base):
     def client_name(self):
         return self.customer.name if self.customer else 'Без клиента'
 
-
 class InventoryItem(Base):
     """Склад (инвентарь)"""
     __tablename__ = 'inventory_items'
@@ -288,7 +280,6 @@ class InventoryItem(Base):
             return (date.today() - self.arrival_date).days
         return 0
 
-
 class Supplier(Base):
     """Поставщик"""
     __tablename__ = 'suppliers'
@@ -299,7 +290,6 @@ class Supplier(Base):
     address = Column(String(250))
     notes = Column(Text)
     is_active = Column(Boolean, default=True)
-
 
 class Expense(Base):
     """Расход"""
@@ -314,7 +304,6 @@ class Expense(Base):
     store = relationship('Store', back_populates='expenses')
     supplier = relationship('Supplier')
 
-
 class Holiday(Base):
     """Праздник (для массовых заказов)"""
     __tablename__ = 'holidays'
@@ -324,7 +313,6 @@ class Holiday(Base):
     date_day = Column(Integer)
     days_before = Column(Integer, default=7)
     notes = Column(Text)
-
 
 class CorporateClient(Base):
     """Корпоративный клиент (B2B)"""
@@ -359,7 +347,6 @@ class CorporateClient(Base):
     def debt(self):
         return sum(inv.amount for inv in self.invoices if not inv.paid)
 
-
 class CorporateEmployee(Base):
     """Сотрудник корпоративного клиента"""
     __tablename__ = 'corporate_employees'
@@ -375,7 +362,6 @@ class CorporateEmployee(Base):
     preferred_budget = Column(Float)
     client = relationship('CorporateClient', back_populates='employees')
 
-
 class Invoice(Base):
     """Счёт (инвойс)"""
     __tablename__ = 'invoices'
@@ -390,7 +376,6 @@ class Invoice(Base):
     description = Column(Text)
     corporate_client = relationship('CorporateClient', back_populates='invoices')
 
-
 class AutoOrdersLog(Base):
     """Лог автозаказов"""
     __tablename__ = 'auto_orders_log'
@@ -400,15 +385,21 @@ class AutoOrdersLog(Base):
     created_at = Column(DateTime, default=datetime.now)
     __table_args__ = (UniqueConstraint('employee_id', 'for_date'),)
 
-
 # ============================================================================
 # 5. Работа с базой данных и сессиями
 # ============================================================================
-engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
+engine = create_engine(
+    f'sqlite:///{DB_PATH}',
+    echo=False,
+    connect_args={'check_same_thread': False}   # Исправление для многопоточности
+)
 Base.metadata.create_all(engine)
-session_factory = sessionmaker(bind=engine)
-Session = scoped_session(session_factory)
-
+SessionFactory = sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False
+)
+Session = scoped_session(SessionFactory)
 
 @contextmanager
 def session_scope():
@@ -422,7 +413,6 @@ def session_scope():
         raise
     finally:
         session.close()
-
 
 def backup_database():
     """Создаёт резервную копию базы данных"""
@@ -443,14 +433,11 @@ def backup_database():
         print(f"Ошибка бэкапа: {e}")
         return None
 
-
 def hash_password(password):
     return generate_password_hash(password)
 
-
 def verify_password(password, hash_):
     return check_password_hash(hash_, password)
-
 
 # ============================================================================
 # 6. Вспомогательные функции
@@ -477,7 +464,6 @@ def get_upcoming_holidays(days=14):
         result.sort(key=lambda x: x['delta'])
         return result
 
-
 def get_upcoming_customer_birthdays(days=30):
     """Возвращает список ДР клиентов на ближайшие days дней"""
     with session_scope() as session:
@@ -499,7 +485,6 @@ def get_upcoming_customer_birthdays(days=30):
                 continue
         result.sort(key=lambda x: x['delta'])
         return result
-
 
 def get_upcoming_corporate_birthdays(days=30):
     """Возвращает список ДР сотрудников корп. клиентов"""
@@ -529,7 +514,6 @@ def get_upcoming_corporate_birthdays(days=30):
         result.sort(key=lambda x: x['delta'])
         return result
 
-
 def generate_order_number(session):
     """Генерирует уникальный номер заказа MUZ-YYYYMMDD-XXX"""
     today_str = date.today().strftime('%Y%m%d')
@@ -543,7 +527,6 @@ def generate_order_number(session):
         except (ValueError, IndexError):
             num = 1
     return f'{prefix}-{today_str}-{num:03d}'
-
 
 def generate_invoice_number(session):
     """Генерирует уникальный номер счёта INV-YYYYMMDD-XXX"""
@@ -559,7 +542,6 @@ def generate_invoice_number(session):
             num = 1
     return f'{prefix}-{today_str}-{num:03d}'
 
-
 def safe_date(value):
     """Преобразует различные форматы в объект date"""
     if value is None:
@@ -574,7 +556,6 @@ def safe_date(value):
         except:
             return date.today()
     return date.today()
-
 
 # ============================================================================
 # 7. Автозаказы на дни рождения сотрудников компаний
@@ -633,7 +614,6 @@ def generate_auto_orders(target_date=None):
                 created += 1
         return created
 
-
 # ============================================================================
 # 8. Массовое создание заказов на праздник
 # ============================================================================
@@ -687,7 +667,6 @@ def create_mass_orders(holiday_id, year, bouquet_name, amount, target_gender):
             created += 1
         return created, f"Создано {created} заказов на {delivery_date.strftime('%d.%m.%Y')}"
 
-
 # ============================================================================
 # 9. Экспорт/импорт в Excel
 # ============================================================================
@@ -720,7 +699,6 @@ def export_orders_to_excel(orders, filepath):
         max_len = max((len(str(cell.value or '')) for cell in col), default=10)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
     wb.save(filepath)
-
 
 def import_orders_from_excel(filepath, store_id):
     wb = openpyxl.load_workbook(filepath, data_only=True)
@@ -771,7 +749,6 @@ def import_orders_from_excel(filepath, store_id):
                 errors.append(f"Строка {row_num}: {str(e)}")
     return imported, errors
 
-
 def export_corporate_proposal(client, filepath):
     """Экспортирует коммерческое предложение для корпоративного клиента"""
     wb = openpyxl.Workbook()
@@ -801,7 +778,6 @@ def export_corporate_proposal(client, filepath):
     for col in ws.columns:
         ws.column_dimensions[col[0].column_letter].width = 25
     wb.save(filepath)
-
 
 # ============================================================================
 # 10. Диалоги (окна для ввода/редактирования данных)
@@ -859,7 +835,6 @@ class LoginDialog(QDialog):
             else:
                 QMessageBox.warning(self, "Ошибка", "Неверный логин или пароль")
 
-
 class ChangePasswordDialog(QDialog):
     """Диалог смены пароля (для пользователя)"""
     def __init__(self, user_data, parent=None):
@@ -910,7 +885,6 @@ class ChangePasswordDialog(QDialog):
             user.password_hash = hash_password(new_pwd)
         QMessageBox.information(self, "Успех", "Пароль успешно изменён")
         return True
-
 
 class CustomerDialog(QDialog):
     def __init__(self, customer=None, parent=None):
@@ -970,7 +944,6 @@ class CustomerDialog(QDialog):
             'is_vip': self.vip_check.isChecked(),
             'notes': self.notes_edit.toPlainText()
         }
-
 
 class ProductDialog(QDialog):
     def __init__(self, product=None, parent=None):
@@ -1042,7 +1015,6 @@ class ProductDialog(QDialog):
             'is_gift_set': self.gift_set_check.isChecked()
         }
 
-
 class OrderDialog(QDialog):
     STATUSES = ['новый', 'принят', 'собирается', 'готов', 'доставлен', 'отменён']
     OCCASIONS = ['День рождения', '8 Марта', 'Новый год', '1 Сентября', '14 Февраля',
@@ -1054,6 +1026,9 @@ class OrderDialog(QDialog):
         self.order = order
         self.store = store
         self.products_list = products or []
+        # Сохраняем списки для быстрого доступа в обработчиках
+        self._customers = customers or []
+        self._corporate_clients = corporate_clients or []
         self.setWindowTitle("Заказ" if order else "Новый заказ")
         self.setMinimumWidth(750)
         self.setMinimumHeight(800)
@@ -1062,13 +1037,13 @@ class OrderDialog(QDialog):
         # Клиент (физ. лицо)
         self.customer_combo = QComboBox()
         self.customer_combo.addItem("", None)
-        for c in customers or []:
+        for c in self._customers:
             self.customer_combo.addItem(f"{c.name} ({c.phone or ''})", c.id)
 
         # Корпоративный клиент
         self.corp_combo = QComboBox()
         self.corp_combo.addItem("— Физ. лицо —", None)
-        for cc in corporate_clients or []:
+        for cc in self._corporate_clients:
             self.corp_combo.addItem(f"🏢 {cc.company_name}", cc.id)
 
         # Повод
@@ -1135,7 +1110,7 @@ class OrderDialog(QDialog):
         self.sweets_check = QCheckBox("🍬 Сладости (+200 ₽)")
         self.decor_check = QCheckBox("🌿 Оформление офиса")
 
-        # Запоминаем базовую сумму ОДИН РАЗ при открытии (исправление бага 2)
+        # Запоминаем базовую сумму при открытии
         if order:
             self._base_amount = (order.amount or 0) - (order.extra_cost or 0)
         else:
@@ -1187,11 +1162,31 @@ class OrderDialog(QDialog):
                         self.composition_edit.setPlainText(p.composition or '')
                         self.amount_spin.setValue(p.price)
                         self.cost_spin.setValue(p.cost_price or 0)
-                        # Обновляем базу для пересчёта
                         self._base_amount = p.price
                         update_extra()
                         break
         self.product_combo.currentIndexChanged.connect(on_product_selected)
+
+        # При выборе корпоративного клиента автоматически подставляем физ. лицо и данные
+        def on_corp_selected(idx):
+            corp_id = self.corp_combo.itemData(idx)
+            if corp_id:
+                for cc in self._corporate_clients:
+                    if cc.id == corp_id:
+                        # Ищем физ. клиента с именем [Компания]
+                        for c in self._customers:
+                            if c.name == f"[{cc.company_name}]":
+                                c_idx = self.customer_combo.findData(c.id)
+                                if c_idx >= 0:
+                                    self.customer_combo.setCurrentIndex(c_idx)
+                                break
+                        # Заполняем адрес и телефон, если поля пустые
+                        if not self.address_edit.text():
+                            self.address_edit.setText(cc.address or '')
+                        if not self.recipient_phone.text():
+                            self.recipient_phone.setText(cc.phone or '')
+                        break
+        self.corp_combo.currentIndexChanged.connect(on_corp_selected)
 
         # Если редактируем существующий заказ — заполняем данные
         if order:
@@ -1277,7 +1272,6 @@ class OrderDialog(QDialog):
             'is_office_decor': self.decor_check.isChecked()
         }
 
-
 class InventoryDialog(QDialog):
     def __init__(self, item=None, store=None, suppliers=None, parent=None):
         super().__init__(parent)
@@ -1360,7 +1354,6 @@ class InventoryDialog(QDialog):
             'supplier_id': self.supplier_combo.currentData()
         }
 
-
 class SupplierDialog(QDialog):
     def __init__(self, supplier=None, parent=None):
         super().__init__(parent)
@@ -1403,7 +1396,6 @@ class SupplierDialog(QDialog):
             'notes': self.notes_edit.toPlainText(),
             'is_active': True
         }
-
 
 class ExpenseDialog(QDialog):
     CATEGORIES = ['аренда', 'закупка цветов', 'транспорт', 'упаковка', 'коммунальные', 'реклама', 'зарплата', 'прочее']
@@ -1466,7 +1458,6 @@ class ExpenseDialog(QDialog):
             'supplier_id': self.supplier_combo.currentData()
         }
 
-
 class StaffDialog(QDialog):
     POSITIONS = ['florist', 'manager', 'admin']
 
@@ -1526,7 +1517,6 @@ class StaffDialog(QDialog):
             'hire_date': self.hire_date.date().toPyDate(),
             'is_active': self.active_check.isChecked()
         }
-
 
 class CorporateClientDialog(QDialog):
     def __init__(self, client=None, store=None, managers=None, parent=None):
@@ -1619,7 +1609,6 @@ class CorporateClientDialog(QDialog):
             'is_active': True
         }
 
-
 class CorporateEmployeeDialog(QDialog):
     def __init__(self, employee=None, parent=None):
         super().__init__(parent)
@@ -1676,7 +1665,6 @@ class CorporateEmployeeDialog(QDialog):
             'preferred_budget': self.preferred_budget_spin.value(),
             'is_active': True
         }
-
 
 class InvoiceDialog(QDialog):
     def __init__(self, invoice=None, clients=None, parent=None):
@@ -1737,7 +1725,6 @@ class InvoiceDialog(QDialog):
             'description': self.desc_edit.text().strip(),
             'paid': self.paid_check.isChecked()
         }
-
 
 # ============================================================================
 # 11. Главное окно приложения
@@ -2174,14 +2161,14 @@ class MainWindow(QMainWindow):
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
         apply_btn.clicked.connect(self.refresh_orders)
-
-        def reset():
-            self.status_combo.setCurrentIndex(0)
-            self.occasion_combo.setCurrentIndex(0)
-            self.search_edit.clear()
-            self.refresh_orders()
-        reset_btn.clicked.connect(reset)
+        reset_btn.clicked.connect(self._reset_filters)   # Исправлено
         self.tabs.addTab(tab, "🛍️ Заказы")
+
+    def _reset_filters(self):
+        self.status_combo.setCurrentIndex(0)
+        self.occasion_combo.setCurrentIndex(0)
+        self.search_edit.clear()
+        self.refresh_orders()
 
     def refresh_orders(self):
         table = self.orders_table
@@ -2274,8 +2261,13 @@ class MainWindow(QMainWindow):
             if order_number.startswith('MUZ-'):
                 order = session.query(Order).filter_by(order_number=order_number).first()
             else:
-                order = session.get(Order, int(order_number))
+                try:
+                    order = session.get(Order, int(order_number))
+                except ValueError:
+                    QMessageBox.warning(self, "Ошибка", "Неверный номер заказа")
+                    return
             if not order:
+                QMessageBox.warning(self, "Ошибка", "Заказ не найден")
                 return
             customers = session.query(Customer).all()
             products = session.query(Product).filter_by(is_active=True).all()
@@ -2307,7 +2299,10 @@ class MainWindow(QMainWindow):
                 if order_number.startswith('MUZ-'):
                     order = session.query(Order).filter_by(order_number=order_number).first()
                 else:
-                    order = session.get(Order, int(order_number))
+                    try:
+                        order = session.get(Order, int(order_number))
+                    except ValueError:
+                        order = None
                 if order:
                     session.delete(order)
                     self.refresh_orders()
@@ -3692,7 +3687,6 @@ class MainWindow(QMainWindow):
         Session.remove()
         event.accept()
 
-
 # ============================================================================
 # 12. Точка входа
 # ============================================================================
@@ -3760,7 +3754,6 @@ def main():
         sys.exit(app.exec_())
     else:
         sys.exit()
-
 
 if __name__ == '__main__':
     main()
