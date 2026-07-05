@@ -26,7 +26,7 @@ from PyQt5.QtGui import QColor, QKeySequence, QPixmap
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Date, Boolean,
-    Text, ForeignKey, DateTime, func, UniqueConstraint
+    Text, ForeignKey, DateTime, func, UniqueConstraint, Index
 )
 from sqlalchemy.orm import sessionmaker, relationship, scoped_session
 from sqlalchemy.exc import SQLAlchemyError
@@ -74,7 +74,7 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 os.makedirs(os.path.join(MEDIA_DIR, 'products'), exist_ok=True)
 
 # ============================================================================
-# 4. Стили интерфейса
+# 4. Стили интерфейса (без изменений)
 # ============================================================================
 STYLE = """
 QMainWindow, QDialog { background-color: #F8F9FA; color: #333333; }
@@ -134,7 +134,7 @@ QProgressBar::chunk { background-color: #05BE9B; border-radius: 3px; }
 """
 
 # ============================================================================
-# 5. Модели базы данных (SQLAlchemy)
+# 5. Модели базы данных (SQLAlchemy) – с индексами и новым полем
 # ============================================================================
 Base = declarative_base()
 
@@ -214,7 +214,7 @@ class Product(Base):
     is_active = Column(Boolean, default=True)
     is_popular = Column(Boolean, default=False)
     is_gift_set = Column(Boolean, default=False)
-    image_path = Column(String(250), nullable=True)  # <--- НОВОЕ ПОЛЕ
+    image_path = Column(String(250), nullable=True)
 
     supplier = relationship('Supplier')
 
@@ -259,7 +259,6 @@ class Order(Base):
     has_sweets = Column(Boolean, default=False)
     extra_cost = Column(Float, default=0.0)
     is_office_decor = Column(Boolean, default=False)
-    # Поле для фото готового букета (опционально)
     photo_path = Column(String(250), nullable=True)
 
     store = relationship('Store', back_populates='orders')
@@ -275,6 +274,11 @@ class Order(Base):
     @property
     def client_name(self):
         return self.customer.name if self.customer else 'Без клиента'
+
+# Индексы для ускорения фильтрации
+Index('idx_orders_store_delivery', Order.store_id, Order.delivery_date)
+Index('idx_orders_status', Order.status)
+Index('idx_orders_corporate', Order.corporate_client_id)
 
 class InventoryItem(Base):
     __tablename__ = 'inventory_items'
@@ -377,6 +381,7 @@ class CorporateEmployee(Base):
     is_active = Column(Boolean, default=True)
     preferred_bouquet = Column(String(150))
     preferred_budget = Column(Float)
+    gender = Column(String(10), default='female')  # <-- НОВОЕ ПОЛЕ
     client = relationship('CorporateClient', back_populates='employees')
 
 class Invoice(Base):
@@ -401,13 +406,12 @@ class AutoOrdersLog(Base):
     __table_args__ = (UniqueConstraint('employee_id', 'for_date'),)
 
 class Setting(Base):
-    """Таблица для хранения настроек приложения"""
     __tablename__ = 'settings'
     key = Column(String(50), primary_key=True)
     value = Column(String(200))
 
 # ============================================================================
-# 6. Работа с базой данных и сессиями
+# 6. Работа с базой данных и сессиями (без изменений)
 # ============================================================================
 engine = create_engine(
     f'sqlite:///{DB_PATH}',
@@ -468,7 +472,7 @@ def backup_database():
         return None
 
 # ============================================================================
-# 7. Вспомогательные функции
+# 7. Вспомогательные функции (исправлены баги с 29 февраля)
 # ============================================================================
 def get_upcoming_holidays(days=14):
     with session_scope() as session:
@@ -499,16 +503,20 @@ def get_upcoming_customer_birthdays(days=30):
         for c in customers:
             try:
                 bd_this = date(today.year, c.birthday.month, c.birthday.day)
-                if bd_this < today:
-                    bd_this = date(today.year + 1, c.birthday.month, c.birthday.day)
-                delta = (bd_this - today).days
-                if 0 <= delta <= days:
-                    result.append({
-                        'date': bd_this, 'name': c.name,
-                        'phone': c.phone or '—', 'delta': delta
-                    })
             except ValueError:
-                continue
+                # Если 29 февраля в невисокосный год – сдвигаем на 28 февраля
+                if c.birthday.month == 2 and c.birthday.day == 29:
+                    bd_this = date(today.year, 2, 28)
+                else:
+                    continue
+            if bd_this < today:
+                bd_this = date(today.year + 1, c.birthday.month, c.birthday.day)
+            delta = (bd_this - today).days
+            if 0 <= delta <= days:
+                result.append({
+                    'date': bd_this, 'name': c.name,
+                    'phone': c.phone or '—', 'delta': delta
+                })
         result.sort(key=lambda x: x['delta'])
         return result
 
@@ -523,19 +531,22 @@ def get_upcoming_corporate_birthdays(days=30):
         for e in employees:
             try:
                 bd_this = date(today.year, e.birthday.month, e.birthday.day)
-                if bd_this < today:
-                    bd_this = date(today.year + 1, e.birthday.month, e.birthday.day)
-                delta = (bd_this - today).days
-                if 0 <= delta <= days:
-                    result.append({
-                        'date': bd_this, 'employee_id': e.id,
-                        'full_name': e.full_name,
-                        'company_name': e.client.company_name if e.client else '',
-                        'preferred_bouquet': e.preferred_bouquet or '',
-                        'preferred_budget': e.preferred_budget, 'delta': delta
-                    })
             except ValueError:
-                continue
+                if e.birthday.month == 2 and e.birthday.day == 29:
+                    bd_this = date(today.year, 2, 28)
+                else:
+                    continue
+            if bd_this < today:
+                bd_this = date(today.year + 1, e.birthday.month, e.birthday.day)
+            delta = (bd_this - today).days
+            if 0 <= delta <= days:
+                result.append({
+                    'date': bd_this, 'employee_id': e.id,
+                    'full_name': e.full_name,
+                    'company_name': e.client.company_name if e.client else '',
+                    'preferred_bouquet': e.preferred_bouquet or '',
+                    'preferred_budget': e.preferred_budget, 'delta': delta
+                })
         result.sort(key=lambda x: x['delta'])
         return result
 
@@ -580,7 +591,7 @@ def safe_date(value):
     return date.today()
 
 # ============================================================================
-# 8. Автозаказы и массовые заказы
+# 8. Автозаказы и массовые заказы (исправлен фильтр по полу)
 # ============================================================================
 def generate_auto_orders(target_date=None):
     if target_date is None:
@@ -605,7 +616,6 @@ def generate_auto_orders(target_date=None):
                 if existing:
                     continue
                 bouquet = emp.preferred_bouquet or "Корпоративный букет"
-                # Используем настройки
                 default_budget = float(get_setting('default_budget', 3500.0))
                 if emp.preferred_budget and emp.preferred_budget > 0:
                     amount = emp.preferred_budget
@@ -649,6 +659,11 @@ def create_mass_orders(holiday_id, year, bouquet_name, amount, target_gender):
         employees = session.query(CorporateEmployee).filter(
             CorporateEmployee.is_active == True
         ).all()
+        # Фильтрация по полу
+        if target_gender == 'female':
+            employees = [e for e in employees if e.gender == 'female']
+        elif target_gender == 'male':
+            employees = [e for e in employees if e.gender == 'male']
         created = 0
         for emp in employees:
             if not emp.client or not emp.client.is_active:
@@ -687,7 +702,7 @@ def create_mass_orders(holiday_id, year, bouquet_name, amount, target_gender):
         return created, f"Создано {created} заказов на {delivery_date.strftime('%d.%m.%Y')}"
 
 # ============================================================================
-# 9. Экспорт/импорт Excel
+# 9. Экспорт/импорт Excel (исправлен импорт прайс-листа)
 # ============================================================================
 def export_orders_to_excel(orders, filepath):
     wb = openpyxl.Workbook()
@@ -821,18 +836,18 @@ def export_products_to_excel(products, filepath):
     wb.save(filepath)
 
 def import_products_from_excel(filepath):
-    """Импорт прайс-листа (обновляет себестоимость и розничную цену)"""
+    """Импорт прайс-листа (обновляет себестоимость и розничную цену) – гибкий поиск заголовка"""
     wb = openpyxl.load_workbook(filepath, data_only=True)
     ws = wb.active
-    # Ищем строку с размерами (40 см, 50 см...)
+    # Ищем строку с заголовками, содержащую слова "цена", "размер", "см" или "стоимость"
     header_row_idx = None
     for row_idx, row in enumerate(ws.iter_rows(min_row=1, max_col=10, values_only=True), 1):
-        row_text = [str(cell or '').strip() for cell in row]
-        if any('40 см' in cell or '50 см' in cell for cell in row_text):
+        row_text = ' '.join(str(cell or '').lower() for cell in row)
+        if any(keyword in row_text for keyword in ['цена', 'размер', 'см', 'стоимость', 'руб']):
             header_row_idx = row_idx
             break
     if not header_row_idx:
-        raise ValueError("Не удалось найти заголовки (40 см, 50 см...)")
+        raise ValueError("Не удалось найти строку с заголовками (цена, размер, см...)")
     imported = 0
     updated = 0
     with session_scope() as session:
@@ -855,7 +870,6 @@ def import_products_from_excel(filepath):
             product = session.query(Product).filter_by(name=name).first()
             if product:
                 product.cost_price = cost_price
-                # Розничная цена = себестоимость * наценка (из настроек)
                 markup = float(get_setting('default_markup', 1.7))
                 product.price = cost_price * markup
                 updated += 1
@@ -873,7 +887,7 @@ def import_products_from_excel(filepath):
     return imported, updated
 
 # ============================================================================
-# 10. Поток для тяжёлой статистики (QThread)
+# 10. Поток для тяжёлой статистики (без изменений)
 # ============================================================================
 class StatsWorker(QThread):
     finished = pyqtSignal(dict)
@@ -883,7 +897,6 @@ class StatsWorker(QThread):
         self.store_id = store_id
 
     def run(self):
-        # Создаём изолированную сессию для потока
         from sqlalchemy.orm import sessionmaker
         engine_worker = create_engine(f'sqlite:///{DB_PATH}', connect_args={'check_same_thread': False})
         SessionWorker = sessionmaker(bind=engine_worker)
@@ -922,7 +935,6 @@ class StatsWorker(QThread):
                 expenses_list.append(exp)
                 corp_revenues.append(corp_rev)
 
-            # ABC-анализ
             products = session.query(Product).all()
             product_stats = []
             for p in products:
@@ -951,7 +963,6 @@ class StatsWorker(QThread):
                         cls = 'C'
                     abc_data.append((cls, p.name, qty, rev, prof, prof / total_profit * 100))
 
-            # Статусы заказов
             status_counts = {}
             for st in OrderDialog.STATUSES:
                 status_counts[st] = session.query(Order).filter_by(store_id=self.store_id, status=st).count()
@@ -974,7 +985,7 @@ class StatsWorker(QThread):
             session.close()
 
 # ============================================================================
-# 11. Диалоги
+# 11. Диалоги (исправлен OrderDialog: ручная сумма не сбрасывается)
 # ============================================================================
 class LoginDialog(QDialog):
     def __init__(self, parent=None):
@@ -1080,6 +1091,7 @@ class ChangePasswordDialog(QDialog):
         return True
 
 class CustomerDialog(QDialog):
+    # без изменений
     def __init__(self, customer=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Клиент" if customer else "Новый клиент")
@@ -1146,12 +1158,11 @@ class ProductDialog(QDialog):
         super().__init__(parent)
         self.product = product
         self.suppliers = suppliers or []
-        self.image_path = None  # будет заполнено при загрузке
+        self.image_path = None
         self.setWindowTitle("Товар" if product else "Новый товар")
         self.setMinimumWidth(700)
         layout = QFormLayout(self)
 
-        # Основные поля
         self.name_edit = QLineEdit()
         self.category_combo = QComboBox()
         self.category_combo.addItems(["букеты", "корзины", "композиции", "подарочные наборы", "свадебные", "траурные", "комнатные растения"])
@@ -1197,7 +1208,6 @@ class ProductDialog(QDialog):
         self.popular_check = QCheckBox("Хит продаж")
         self.gift_set_check = QCheckBox("🎁 Подарочный набор")
 
-        # ---------- БЛОК ФОТО ----------
         self.image_label = QLabel("Нет фото")
         self.image_label.setFixedSize(150, 150)
         self.image_label.setStyleSheet("border: 1px solid #ccc; background: #f0f0f0;")
@@ -1209,9 +1219,7 @@ class ProductDialog(QDialog):
         img_layout = QHBoxLayout()
         img_layout.addWidget(self.image_label)
         img_layout.addWidget(self.btn_load_img)
-        # ---------------------------------
 
-        # Добавляем в форму
         layout.addRow("Название *:", self.name_edit)
         layout.addRow("Категория:", self.category_combo)
         layout.addRow("Поставщик:", self.supplier_combo)
@@ -1259,7 +1267,6 @@ class ProductDialog(QDialog):
             self.active_check.setChecked(product.is_active)
             self.popular_check.setChecked(product.is_popular)
             self.gift_set_check.setChecked(product.is_gift_set)
-            # Загружаем фото, если есть
             if product.image_path and os.path.exists(product.image_path):
                 self._show_image(product.image_path)
         else:
@@ -1277,7 +1284,6 @@ class ProductDialog(QDialog):
     def load_image(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Выберите фото", "", "Images (*.png *.jpg *.jpeg)")
         if filepath:
-            # Копируем файл в папку media/products с уникальным именем
             ext = os.path.splitext(filepath)[1]
             dest_filename = f"{uuid.uuid4().hex}{ext}"
             dest_path = os.path.join(MEDIA_DIR, 'products', dest_filename)
@@ -1331,23 +1337,22 @@ class OrderDialog(QDialog):
         self.setMinimumHeight(800)
         layout = QFormLayout(self)
 
-        # Клиент (физ. лицо)
+        # Флаг ручного редактирования суммы
+        self._manual_amount_edit = False
+
         self.customer_combo = QComboBox()
         self.customer_combo.addItem("", None)
         for c in self._customers:
             self.customer_combo.addItem(f"{c.name} ({c.phone or ''})", c.id)
 
-        # Корпоративный клиент
         self.corp_combo = QComboBox()
         self.corp_combo.addItem("— Физ. лицо —", None)
         for cc in self._corporate_clients:
             self.corp_combo.addItem(f"🏢 {cc.company_name}", cc.id)
 
-        # Повод
         self.occasion_combo = QComboBox()
         self.occasion_combo.addItems(self.OCCASIONS)
 
-        # Даты
         self.order_date = QDateEdit()
         self.order_date.setCalendarPopup(True)
         self.order_date.setDate(QDate.currentDate())
@@ -1360,19 +1365,16 @@ class OrderDialog(QDialog):
         self.delivery_time = QLineEdit()
         self.delivery_time.setPlaceholderText("14:00")
 
-        # Товар из каталога
         self.product_combo = QComboBox()
         self.product_combo.addItem("— Без каталога —", None)
         for p in self.products_list:
             if p.is_active:
                 self.product_combo.addItem(f"{p.name} ({p.price:,.0f} ₽)", p.id)
 
-        # Букет и состав
         self.bouquet_edit = QLineEdit()
         self.composition_edit = QTextEdit()
         self.composition_edit.setMaximumHeight(60)
 
-        # Количество, сумма, себестоимость
         self.quantity_spin = QSpinBox()
         self.quantity_spin.setRange(1, 9999)
         self.quantity_spin.setValue(1)
@@ -1387,12 +1389,10 @@ class OrderDialog(QDialog):
         self.cost_spin.setPrefix("₽ ")
         self.cost_spin.setDecimals(2)
 
-        # Получатель и адрес
         self.recipient_name = QLineEdit()
         self.recipient_phone = QLineEdit()
         self.address_edit = QLineEdit()
 
-        # Статус и флорист
         self.status_combo = QComboBox()
         self.status_combo.addItems(self.STATUSES)
 
@@ -1401,7 +1401,6 @@ class OrderDialog(QDialog):
         for f in florists or []:
             self.florist_combo.addItem(f"{f.full_name}", f.id)
 
-        # Оплата и доп. услуги
         self.paid_check = QCheckBox("Оплачен")
         self.card_check = QCheckBox("📨 Открытка")
         self.sweets_check = QCheckBox("🍬 Сладости")
@@ -1413,20 +1412,31 @@ class OrderDialog(QDialog):
             self._base_amount = 0
 
         def update_extra():
-            card_price = float(get_setting('card_price', 100))
-            sweets_price = float(get_setting('sweets_price', 200))
-            extra = (card_price if self.card_check.isChecked() else 0) + \
-                    (sweets_price if self.sweets_check.isChecked() else 0)
-            self.amount_spin.setValue(self._base_amount + extra)
+            if not self._manual_amount_edit:
+                card_price = float(get_setting('card_price', 100))
+                sweets_price = float(get_setting('sweets_price', 200))
+                extra = (card_price if self.card_check.isChecked() else 0) + \
+                        (sweets_price if self.sweets_check.isChecked() else 0)
+                self.amount_spin.setValue(self._base_amount + extra)
+            else:
+                # Если пользователь редактировал вручную, не пересчитываем
+                pass
 
+        def on_amount_edited():
+            self._manual_amount_edit = True
+            # Обновляем базовую сумму, чтобы при изменении чекбоксов не сбрасывать
+            self._base_amount = self.amount_spin.value() - (
+                (float(get_setting('card_price', 100)) if self.card_check.isChecked() else 0) +
+                (float(get_setting('sweets_price', 200)) if self.sweets_check.isChecked() else 0)
+            )
+
+        self.amount_spin.valueChanged.connect(on_amount_edited)
         self.card_check.stateChanged.connect(update_extra)
         self.sweets_check.stateChanged.connect(update_extra)
 
-        # Комментарий
         self.comment_edit = QTextEdit()
         self.comment_edit.setMaximumHeight(60)
 
-        # Размещаем поля в форме
         layout.addRow("Клиент (физ. лицо):", self.customer_combo)
         layout.addRow("Корпоративный клиент:", self.corp_combo)
         layout.addRow("Повод:", self.occasion_combo)
@@ -1450,7 +1460,6 @@ class OrderDialog(QDialog):
         layout.addRow(self.decor_check)
         layout.addRow("Комментарий:", self.comment_edit)
 
-        # При выборе товара из каталога заполняем поля
         def on_product_selected(idx):
             pid = self.product_combo.itemData(idx)
             if pid:
@@ -1461,11 +1470,11 @@ class OrderDialog(QDialog):
                         self.amount_spin.setValue(p.price)
                         self.cost_spin.setValue(p.cost_price or 0)
                         self._base_amount = p.price
+                        self._manual_amount_edit = False
                         update_extra()
                         break
         self.product_combo.currentIndexChanged.connect(on_product_selected)
 
-        # При выборе корпоративного клиента автоматически подставляем физ. лицо и данные
         def on_corp_selected(idx):
             corp_id = self.corp_combo.itemData(idx)
             if corp_id:
@@ -1484,7 +1493,6 @@ class OrderDialog(QDialog):
                         break
         self.corp_combo.currentIndexChanged.connect(on_corp_selected)
 
-        # Если редактируем существующий заказ — заполняем данные
         if order:
             if order.customer_id:
                 idx = self.customer_combo.findData(order.customer_id)
@@ -1525,7 +1533,6 @@ class OrderDialog(QDialog):
             self.sweets_check.setChecked(order.has_sweets or False)
             self.decor_check.setChecked(order.is_office_decor or False)
 
-        # Кнопки
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить заказ")
         cancel_btn = QPushButton("Отмена")
@@ -1925,10 +1932,13 @@ class CorporateEmployeeDialog(QDialog):
         self.preferred_budget_spin.setRange(0, 10000000)
         self.preferred_budget_spin.setPrefix("₽ ")
         self.preferred_budget_spin.setDecimals(2)
+        self.gender_combo = QComboBox()
+        self.gender_combo.addItems(['female', 'male'])
         layout.addRow("ФИО *:", self.full_name_edit)
         layout.addRow("Должность:", self.position_edit)
         layout.addRow("День рождения:", self.birthday)
         layout.addRow("Телефон:", self.phone_edit)
+        layout.addRow("Пол:", self.gender_combo)
         layout.addRow("Предпочт. букет:", self.preferred_bouquet_edit)
         layout.addRow("Бюджет:", self.preferred_budget_spin)
         layout.addRow("Заметки:", self.notes_edit)
@@ -1941,6 +1951,10 @@ class CorporateEmployeeDialog(QDialog):
             self.notes_edit.setPlainText(employee.notes or '')
             self.preferred_bouquet_edit.setText(employee.preferred_bouquet or '')
             self.preferred_budget_spin.setValue(employee.preferred_budget or 0)
+            if employee.gender:
+                idx = self.gender_combo.findText(employee.gender)
+                if idx >= 0:
+                    self.gender_combo.setCurrentIndex(idx)
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить")
         cancel_btn = QPushButton("Отмена")
@@ -1959,6 +1973,7 @@ class CorporateEmployeeDialog(QDialog):
             'notes': self.notes_edit.toPlainText(),
             'preferred_bouquet': self.preferred_bouquet_edit.text().strip(),
             'preferred_budget': self.preferred_budget_spin.value(),
+            'gender': self.gender_combo.currentText(),
             'is_active': True
         }
 
@@ -2023,7 +2038,7 @@ class InvoiceDialog(QDialog):
         }
 
 # ============================================================================
-# 12. Главное окно приложения
+# 12. Главное окно приложения (исправлены add/delete/edit заказов)
 # ============================================================================
 class MainWindow(QMainWindow):
     def __init__(self, user_data):
@@ -2066,7 +2081,6 @@ class MainWindow(QMainWindow):
             users_action = QAction("👥 Пользователи системы", self)
             users_action.triggered.connect(self.show_users)
             settings_menu.addAction(users_action)
-            # Добавляем пункт "Настройки приложения"
             app_settings_action = QAction("🛠 Параметры системы", self)
             app_settings_action.triggered.connect(self.show_app_settings)
             settings_menu.addAction(app_settings_action)
@@ -2136,26 +2150,19 @@ class MainWindow(QMainWindow):
         self.create_holidays_tab()
         self.create_statistics_tab()
 
-        # Применяем ролевую модель
         self.apply_role_permissions()
 
     def apply_role_permissions(self):
-        """Скрывает вкладки и кнопки в зависимости от роли"""
         role = self.role
         if role == 'florist':
-            # Флорист видит только Заказы (вкладка 1) и Каталог (3)
             hidden_tabs = [0, 2, 4, 5, 6, 7, 8, 9, 10, 11]
             for idx in sorted(hidden_tabs, reverse=True):
                 if idx < self.tabs.count():
                     self.tabs.removeTab(idx)
-            # Скрываем кнопки добавления/удаления заказов
             if hasattr(self, 'btn_add_order'):
                 self.btn_add_order.hide()
                 self.btn_del_order.hide()
-        elif role == 'manager':
-            # Менеджеру скрываем только статистику (по желанию)
-            # можно ничего не скрывать, но ограничить удаление
-            pass
+                self.btn_edit_order.hide()  # тоже скрываем для флориста
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+N"), self, self.add_order)
@@ -2207,13 +2214,11 @@ class MainWindow(QMainWindow):
                           "© 2026 Muzflowers")
 
     def show_app_settings(self):
-        """Диалог настроек приложения (для администратора)"""
         dlg = QDialog(self)
         dlg.setWindowTitle("Настройки системы")
         dlg.setMinimumWidth(400)
         layout = QFormLayout(dlg)
 
-        # Загружаем текущие настройки
         card_price = get_setting('card_price', '100')
         sweets_price = get_setting('sweets_price', '200')
         default_budget = get_setting('default_budget', '3500.0')
@@ -2334,7 +2339,7 @@ class MainWindow(QMainWindow):
             logger.error(f"Ошибка обновления: {e}", exc_info=True)
             QMessageBox.warning(self, "Ошибка обновления", str(e))
 
-    # ---------- Вкладка Главная ----------
+    # ---------- Вкладка Главная (без изменений) ----------
     def create_dashboard_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -2478,7 +2483,7 @@ class MainWindow(QMainWindow):
                     text += f" (через {bd['delta']} дн.)"
                 self.events_preview.addItem(QListWidgetItem(text))
 
-    # ---------- Вкладка Заказы ----------
+    # ---------- Вкладка Заказы (исправлены методы add/edit/delete) ----------
     def create_orders_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -2627,6 +2632,11 @@ class MainWindow(QMainWindow):
                 order = Order(**data)
                 order.order_number = generate_order_number(session)
                 session.add(order)
+                # Списание товара со склада
+                if data.get('product_id'):
+                    product = session.get(Product, data['product_id'])
+                    if product and product.stock is not None:
+                        product.stock = max(0, product.stock - data['quantity'])
                 self.refresh_orders()
                 self.refresh_dashboard()
                 self.statusBar().showMessage(f"✅ Заказ {order.order_number} создан", 3000)
@@ -2648,6 +2658,16 @@ class MainWindow(QMainWindow):
             if not order:
                 QMessageBox.warning(self, "Ошибка", "Заказ не найден")
                 return
+            # Проверка прав: флорист может редактировать только свои заказы
+            if self.role == 'florist':
+                staff_id = session.query(Staff).filter_by(user_id=self.user_id).first()
+                if not staff_id or order.florist_id != staff_id.id:
+                    QMessageBox.warning(self, "Доступ запрещён", "Флорист может редактировать только свои заказы.")
+                    return
+            # Сохраняем старые данные для возврата на склад
+            old_product_id = order.product_id
+            old_quantity = order.quantity
+
             customers = session.query(Customer).all()
             products = session.query(Product).filter_by(is_active=True).all()
             florists = session.query(Staff).filter(
@@ -2662,8 +2682,19 @@ class MainWindow(QMainWindow):
             dlg = OrderDialog(order, customers, products, florists, corporate_clients, store, self)
             if dlg.exec_():
                 data = dlg.get_data()
+                # Возвращаем старый товар на склад
+                if old_product_id:
+                    old_prod = session.get(Product, old_product_id)
+                    if old_prod:
+                        old_prod.stock = (old_prod.stock or 0) + old_quantity
+                # Обновляем заказ
                 for k, v in data.items():
                     setattr(order, k, v)
+                # Списание нового товара
+                if data.get('product_id'):
+                    new_prod = session.get(Product, data['product_id'])
+                    if new_prod and new_prod.stock is not None:
+                        new_prod.stock = max(0, new_prod.stock - data['quantity'])
                 self.refresh_orders()
                 self.refresh_dashboard()
 
@@ -2683,6 +2714,17 @@ class MainWindow(QMainWindow):
                     except ValueError:
                         order = None
                 if order:
+                    # Проверка прав
+                    if self.role == 'florist':
+                        staff_id = session.query(Staff).filter_by(user_id=self.user_id).first()
+                        if not staff_id or order.florist_id != staff_id.id:
+                            QMessageBox.warning(self, "Доступ запрещён", "Флорист может удалять только свои заказы.")
+                            return
+                    # Возврат товара на склад
+                    if order.product_id:
+                        prod = session.get(Product, order.product_id)
+                        if prod:
+                            prod.stock = (prod.stock or 0) + order.quantity
                     session.delete(order)
                     self.refresh_orders()
                     self.refresh_dashboard()
