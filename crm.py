@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # pyinstaller --onefile --windowed --name "MuzflowersCRM" --icon=myicon.ico --hidden-import=apscheduler.schedulers.qt --hidden-import=apscheduler.executors.pool crm.py
-# ============================================================================
-# 1. Импорты
-# ============================================================================
+
 import sys
 import os
 import shutil
@@ -19,10 +17,10 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QDateEdit, QTextEdit, QDialog, QFormLayout,
     QMessageBox, QFileDialog, QHeaderView, QSpinBox, QDoubleSpinBox,
     QGroupBox, QCheckBox, QAction, QListWidget, QListWidgetItem,
-    QShortcut, QSplitter, QProgressBar
+    QShortcut, QSplitter, QProgressBar, QFrame
 )
 from PyQt5.QtCore import Qt, QDate, QTimer
-from PyQt5.QtGui import QColor, QKeySequence, QPixmap
+from PyQt5.QtGui import QColor, QKeySequence, QPixmap, QFont
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Date, Boolean,
@@ -37,9 +35,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.qt import QtScheduler
 
-# ============================================================================
-# 2. Настройка логирования
-# ============================================================================
+# --- 1. Настройка логирования ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -50,9 +46,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("MuzflowersCRM")
 
-# ============================================================================
-# 3. Конфигурация
-# ============================================================================
+# --- 2. Конфигурация ---
 DB_PATH = 'muzflowers.db'
 BACKUP_DIR = 'backups'
 MEDIA_DIR = 'media'
@@ -60,69 +54,274 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(MEDIA_DIR, exist_ok=True)
 os.makedirs(os.path.join(MEDIA_DIR, 'products'), exist_ok=True)
 
-# ============================================================================
-# 4. Стили интерфейса (без изменений)
-# ============================================================================
+# Настройка: сколько дней можно хранить скоропортящийся товар
+PERISHABLE_DAYS = 3  # можно изменить через настройки позже
+
+# --- 3. Стили интерфейса (улучшенный дизайн) ---
 STYLE = """
-QMainWindow, QDialog { background-color: #F8F9FA; color: #333333; }
-QTabWidget::pane { border: 1px solid #D0D0D0; background-color: #FFFFFF; }
+/* Основные цвета: свежий, светлый, с акцентами розового и зелёного */
+QMainWindow, QDialog {
+    background-color: #FDFBF7;
+    color: #333333;
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
+/* Вкладки */
+QTabWidget::pane {
+    border: 2px solid #E8E0D5;
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    margin-top: -1px;
+}
 QTabBar::tab {
-    background-color: #E9ECEF; color: #333333; padding: 10px 22px;
-    border: 1px solid #D0D0D0; border-bottom: none;
-    border-radius: 6px 6px 0 0; margin-right: 2px;
+    background-color: #F4F0EA;
+    color: #555555;
+    padding: 8px 16px;
+    border: 2px solid #E8E0D5;
+    border-bottom: none;
+    border-radius: 10px 10px 0 0;
+    margin-right: 3px;
+    font-weight: bold;
+    font-size: 12px;
 }
-QTabBar::tab:selected { background-color: #4155E1; color: #FFFFFF; font-weight: bold; }
-QTabBar::tab:hover { background-color: #A0D1FF; color: #333333; }
+QTabBar::tab:selected {
+    background-color: #F38BA8;
+    color: #FFFFFF;
+    border-color: #F38BA8;
+}
+QTabBar::tab:hover {
+    background-color: #FADADD;
+    color: #333333;
+}
+
+/* Таблицы - улучшенный дизайн с рамками */
 QTableWidget {
-    background-color: #FFFFFF; color: #333333;
-    gridline-color: #E0E0E0; alternate-background-color: #F8F9FA;
+    background-color: #FFFFFF;
+    color: #333333;
+    gridline-color: #E8E0D5;
+    alternate-background-color: #F9F7F4;
+    border: 2px solid #E8E0D5;
+    border-radius: 8px;
+    selection-background-color: #FADADD;
+    selection-color: #333333;
 }
-QTableWidget::item:selected { background-color: #A0D1FF; color: #333333; }
+QTableWidget::item {
+    padding: 8px 12px;
+    border: 1px solid #F0EBE5;
+}
+QTableWidget::item:selected {
+    background-color: #FADADD;
+    color: #333333;
+}
 QHeaderView::section {
-    background-color: #4155E1; color: #FFFFFF; padding: 8px;
-    border: 1px solid #2E3F9E; font-weight: bold;
+    background-color: #F38BA8;
+    color: #FFFFFF;
+    padding: 12px 16px;
+    border: none;
+    font-weight: bold;
+    font-size: 13px;
 }
+QHeaderView::section:horizontal {
+    border-right: 1px solid #D45A7A;
+}
+QHeaderView::section:last {
+    border-right: none;
+}
+QTableWidget QTableCornerButton::section {
+    background-color: #F38BA8;
+    border: none;
+}
+
+/* Кнопки */
 QPushButton {
-    background-color: #4155E1; color: #FFFFFF; border: none;
-    padding: 9px 18px; border-radius: 6px; font-weight: bold;
+    background-color: #F38BA8;
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 22px;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 14px;
 }
-QPushButton:hover { background-color: #4A44F2; }
-QPushButton:pressed { background-color: #05BE9B; }
-QPushButton:disabled { background-color: #D0D0D0; color: #888888; }
-QPushButton#secondary { background-color: #E9ECEF; color: #333333; }
-QPushButton#secondary:hover { background-color: #D0D0D0; }
-QPushButton#success { background-color: #64D723; color: #FFFFFF; }
-QPushButton#danger { background-color: #DC3545; color: #FFFFFF; }
+QPushButton:hover {
+    background-color: #E57393;
+}
+QPushButton:pressed {
+    background-color: #D45A7A;
+}
+QPushButton:disabled {
+    background-color: #D0C8BE;
+    color: #888888;
+}
+QPushButton#secondary {
+    background-color: #E8E0D5;
+    color: #555555;
+}
+QPushButton#secondary:hover {
+    background-color: #D5CCC0;
+}
+QPushButton#success {
+    background-color: #88C4A3;
+}
+QPushButton#danger {
+    background-color: #E57373;
+}
+QPushButton#primary {
+    background-color: #F38BA8;
+}
+
+/* Поля ввода */
 QLineEdit, QComboBox, QDateEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QListWidget {
-    background-color: #FFFFFF; color: #333333;
-    border: 1px solid #CED4DA; padding: 6px; border-radius: 4px;
+    background-color: #FFFFFF;
+    color: #333333;
+    border: 2px solid #E8E0D5;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 13px;
 }
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus { border: 1px solid #4155E1; }
-QLabel { color: #333333; }
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus {
+    border: 2px solid #F38BA8;
+}
+
+/* Заголовки */
+QLabel {
+    color: #333333;
+    font-size: 13px;
+}
+QLabel#title {
+    font-size: 28px;
+    font-weight: bold;
+    color: #F38BA8;
+}
+QLabel#subtitle {
+    font-size: 14px;
+    color: #888888;
+}
+QLabel#section-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #F38BA8;
+    padding: 10px 0;
+}
+
+/* Групповые рамки */
 QGroupBox {
-    border: 1px solid #D0D0D0; border-radius: 8px;
-    margin-top: 12px; padding-top: 18px; color: #333333;
+    border: 2px solid #E8E0D5;
+    border-radius: 12px;
+    margin-top: 18px;
+    padding-top: 22px;
+    background-color: #FFFFFF;
 }
 QGroupBox::title {
-    subcontrol-origin: margin; left: 12px;
-    padding: 0 8px; color: #4A44F2; font-weight: bold;
+    subcontrol-origin: margin;
+    left: 15px;
+    padding: 0 12px;
+    color: #F38BA8;
+    font-weight: bold;
+    font-size: 15px;
 }
-QCheckBox { color: #333333; spacing: 6px; }
-QMenuBar { background-color: #FFFFFF; color: #333333; }
-QMenuBar::item:selected { background-color: #4155E1; color: #FFFFFF; }
-QMenu { background-color: #FFFFFF; color: #333333; border: 1px solid #D0D0D0; }
-QMenu::item:selected { background-color: #A0D1FF; color: #333333; }
-QStatusBar { background-color: #9B9FF2; color: #FFFFFF; }
+
+/* Чекбоксы */
+QCheckBox {
+    color: #333333;
+    spacing: 8px;
+}
+QCheckBox::indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 2px solid #D5CCC0;
+}
+QCheckBox::indicator:checked {
+    background-color: #F38BA8;
+    border: 2px solid #F38BA8;
+}
+
+/* Меню */
+QMenuBar {
+    background-color: #FFFFFF;
+    color: #333333;
+    border-bottom: 2px solid #E8E0D5;
+}
+QMenuBar::item:selected {
+    background-color: #F38BA8;
+    color: #FFFFFF;
+}
+QMenu {
+    background-color: #FFFFFF;
+    color: #333333;
+    border: 1px solid #E8E0D5;
+}
+QMenu::item:selected {
+    background-color: #FADADD;
+    color: #333333;
+}
+
+/* Строка состояния */
+QStatusBar {
+    background-color: #F38BA8;
+    color: #FFFFFF;
+    font-weight: bold;
+}
+
+/* Прогресс-бар */
 QProgressBar {
-    border: 1px solid #D0D0D0; border-radius: 4px; text-align: center;
-    background-color: #F2F2F2; color: #333333;
+    border: 2px solid #D5CCC0;
+    border-radius: 10px;
+    text-align: center;
+    background-color: #F9F7F4;
+    color: #333333;
 }
-QProgressBar::chunk { background-color: #05BE9B; border-radius: 3px; }
+QProgressBar::chunk {
+    background-color: #88C4A3;
+    border-radius: 10px;
+}
+
+/* Карточки метрик на главной */
+.metric-card {
+    background-color: #FFFFFF;
+    border: 2px solid #E8E0D5;
+    border-radius: 16px;
+    padding: 18px;
+}
+.metric-card QLabel {
+    font-size: 14px;
+    color: #888888;
+}
+.metric-card QLabel#value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #333333;
+}
+.metric-card QLabel#icon {
+    font-size: 32px;
+}
+
+/* Списки */
+QListWidget {
+    border: 2px solid #E8E0D5;
+    border-radius: 8px;
+    padding: 5px;
+}
+QListWidget::item {
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+QListWidget::item:selected {
+    background-color: #FADADD;
+    color: #333333;
+}
+QListWidget::item:hover {
+    background-color: #F9F7F4;
+}
+
+/* Сплиттер */
+QSplitter::handle {
+    background-color: #E8E0D5;
+    width: 3px;
+}
 """
 
-# ============================================================================
-# 5. Модели базы данных (SQLAlchemy)
-# ============================================================================
+# --- 4. Модели базы данных ---
 Base = declarative_base()
 
 class Store(Base):
@@ -395,16 +594,19 @@ class Setting(Base):
     key = Column(String(50), primary_key=True)
     value = Column(String(200))
 
-# ============================================================================
-# 6. Работа с базой данных и сессиями
-# ============================================================================
+# --- 5. Работа с базой данных ---
 engine = create_engine(
     f'sqlite:///{DB_PATH}',
     echo=False,
     connect_args={'check_same_thread': False}
 )
 Base.metadata.create_all(engine)
-SessionFactory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+SessionFactory = sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False
+)
 Session = scoped_session(SessionFactory)
 
 @contextmanager
@@ -456,9 +658,7 @@ def backup_database():
         logger.error(f"Ошибка бэкапа: {e}", exc_info=True)
         return None
 
-# ============================================================================
-# 7. Вспомогательные функции
-# ============================================================================
+# --- 6. Вспомогательные функции ---
 def get_upcoming_holidays(days=14):
     with session_scope() as session:
         today = date.today()
@@ -535,30 +735,54 @@ def get_upcoming_corporate_birthdays(days=30):
         return result
 
 def generate_order_number(session):
+    """Генерирует уникальный номер заказа с учётом уже добавленных в сессию записей."""
     today_str = date.today().strftime('%Y%m%d')
     prefix = 'MUZ'
     pattern = f'{prefix}-{today_str}-%'
-    last = session.query(Order).filter(Order.order_number.like(pattern)).order_by(Order.id.desc()).first()
+
+    # 1. Номера из базы данных
+    existing_in_db = session.query(Order.order_number).filter(Order.order_number.like(pattern)).all()
+    existing_in_db = {num[0] for num in existing_in_db}
+
+    # 2. Номера из объектов, уже добавленных в сессию, но ещё не сохранённых
+    existing_in_session = set()
+    for obj in session.new:
+        if isinstance(obj, Order) and obj.order_number and obj.order_number.startswith(prefix):
+            existing_in_session.add(obj.order_number)
+
+    all_existing = existing_in_db.union(existing_in_session)
+
     num = 1
-    if last and last.order_number:
-        try:
-            num = int(last.order_number.split('-')[-1]) + 1
-        except (ValueError, IndexError):
-            num = 1
-    return f'{prefix}-{today_str}-{num:03d}'
+    while True:
+        candidate = f'{prefix}-{today_str}-{num:03d}'
+        if candidate not in all_existing:
+            return candidate
+        num += 1
 
 def generate_invoice_number(session):
+    """Генерирует уникальный номер счета с учётом уже добавленных в сессию записей."""
     today_str = date.today().strftime('%Y%m%d')
     prefix = 'INV'
     pattern = f'{prefix}-{today_str}-%'
-    last = session.query(Invoice).filter(Invoice.invoice_number.like(pattern)).order_by(Invoice.id.desc()).first()
+
+    # 1. Номера из базы данных
+    existing_in_db = session.query(Invoice.invoice_number).filter(Invoice.invoice_number.like(pattern)).all()
+    existing_in_db = {num[0] for num in existing_in_db}
+
+    # 2. Номера из объектов, уже добавленных в сессию, но ещё не сохранённых
+    existing_in_session = set()
+    for obj in session.new:
+        if isinstance(obj, Invoice) and obj.invoice_number and obj.invoice_number.startswith(prefix):
+            existing_in_session.add(obj.invoice_number)
+
+    all_existing = existing_in_db.union(existing_in_session)
+
     num = 1
-    if last and last.invoice_number:
-        try:
-            num = int(last.invoice_number.split('-')[-1]) + 1
-        except (ValueError, IndexError):
-            num = 1
-    return f'{prefix}-{today_str}-{num:03d}'
+    while True:
+        candidate = f'{prefix}-{today_str}-{num:03d}'
+        if candidate not in all_existing:
+            return candidate
+        num += 1
 
 def safe_date(value):
     if value is None:
@@ -574,9 +798,7 @@ def safe_date(value):
             return date.today()
     return date.today()
 
-# ============================================================================
-# 8. Автозаказы и массовые заказы
-# ============================================================================
+# --- 7. Автозаказы и массовые заказы ---
 def generate_auto_orders(target_date=None):
     if target_date is None:
         target_date = date.today() + timedelta(days=1)
@@ -684,9 +906,7 @@ def create_mass_orders(holiday_id, year, bouquet_name, amount, target_gender):
             created += 1
         return created, f"Создано {created} заказов на {delivery_date.strftime('%d.%m.%Y')}"
 
-# ============================================================================
-# 9. Экспорт/импорт Excel
-# ============================================================================
+# --- 8. Экспорт/импорт Excel ---
 def export_orders_to_excel(orders, filepath):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -866,9 +1086,8 @@ def import_products_from_excel(filepath):
                 imported += 1
     return imported, updated
 
-# ============================================================================
-# 10. Диалоги
-# ============================================================================
+# --- 9. Диалоги ---
+
 class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -876,13 +1095,13 @@ class LoginDialog(QDialog):
         self.setModal(True)
         self.setFixedSize(500, 350)
         layout = QVBoxLayout(self)
-        title = QLabel("🌹 Muzflowers CRM")
-        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #f38ba8;")
+        title = QLabel("🌹 Muzflowers B2B CRM")
+        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #F38BA8;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
-        subtitle = QLabel("Розничный цветочный магазин + B2B")
+        subtitle = QLabel("Корпоративные поздравления по подписке")
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: #89b4fa; font-size: 13px;")
+        subtitle.setStyleSheet("color: #888888; font-size: 14px;")
         layout.addWidget(subtitle)
         layout.addSpacing(15)
         form = QFormLayout()
@@ -898,8 +1117,8 @@ class LoginDialog(QDialog):
         self.login_btn.clicked.connect(self.try_login)
         self.password_edit.returnPressed.connect(self.try_login)
         layout.addWidget(self.login_btn)
-        hint = QLabel("admin / admin123  •  sergey / sergey123  •  nikolay / nikolay123\nmikhail / mikhail123  •  klim / klim123  •  natalia_bobrova / natalia123")
-        hint.setStyleSheet("color: gray; font-size: 10px;")
+        hint = QLabel("admin / admin123  •  sergey / sergey123")
+        hint.setStyleSheet("color: #D0C8BE; font-size: 10px;")
         hint.setAlignment(Qt.AlignCenter)
         layout.addWidget(hint)
         self.user_data = None
@@ -1094,7 +1313,7 @@ class ProductDialog(QDialog):
 
         self.image_label = QLabel("Нет фото")
         self.image_label.setFixedSize(150, 150)
-        self.image_label.setStyleSheet("border: 1px solid #ccc; background: #f0f0f0;")
+        self.image_label.setStyleSheet("border: 1px solid #E8E0D5; background: #F9F7F4; border-radius: 8px;")
         self.image_label.setAlignment(Qt.AlignCenter)
 
         self.btn_load_img = QPushButton("📷 Загрузить фото")
@@ -1252,7 +1471,13 @@ class OrderDialog(QDialog):
         self.product_combo.addItem("— Без каталога —", None)
         for p in self.products_list:
             if p.is_active:
-                self.product_combo.addItem(f"{p.name} ({p.price:,.0f} ₽)", p.id)
+                # Добавляем информацию об остатке в название
+                stock_info = f" (остаток: {p.stock:.0f})" if p.stock is not None else ""
+                self.product_combo.addItem(f"{p.name} ({p.price:,.0f} ₽){stock_info}", p.id)
+
+        # Метка для отображения остатка выбранного товара
+        self.stock_label = QLabel("Остаток: —")
+        self.stock_label.setStyleSheet("color: #555; font-size: 12px;")
 
         self.bouquet_edit = QLineEdit()
         self.composition_edit = QTextEdit()
@@ -1316,6 +1541,11 @@ class OrderDialog(QDialog):
         self.comment_edit = QTextEdit()
         self.comment_edit.setMaximumHeight(60)
 
+        # Добавляем виджет для отображения остатка
+        stock_layout = QHBoxLayout()
+        stock_layout.addWidget(self.stock_label)
+        stock_layout.addStretch()
+
         layout.addRow("Клиент (физ. лицо):", self.customer_combo)
         layout.addRow("Корпоративный клиент:", self.corp_combo)
         layout.addRow("Повод:", self.occasion_combo)
@@ -1323,6 +1553,7 @@ class OrderDialog(QDialog):
         layout.addRow("Дата доставки *:", self.delivery_date)
         layout.addRow("Время доставки:", self.delivery_time)
         layout.addRow("Из каталога:", self.product_combo)
+        layout.addRow("", stock_layout)  # Добавляем строку с остатком
         layout.addRow("Букет *:", self.bouquet_edit)
         layout.addRow("Состав:", self.composition_edit)
         layout.addRow("Количество:", self.quantity_spin)
@@ -1339,6 +1570,24 @@ class OrderDialog(QDialog):
         layout.addRow(self.decor_check)
         layout.addRow("Комментарий:", self.comment_edit)
 
+        def update_stock_label():
+            """Обновляет метку остатка при выборе товара."""
+            pid = self.product_combo.currentData()
+            if pid:
+                for p in self.products_list:
+                    if p.id == pid:
+                        stock = p.stock if p.stock is not None else 0
+                        self.stock_label.setText(f"Остаток: {stock:.0f} {p.unit}")
+                        # Если остаток мал, выделяем красным
+                        if stock <= p.min_stock and p.min_stock > 0:
+                            self.stock_label.setStyleSheet("color: #E57373; font-weight: bold;")
+                        else:
+                            self.stock_label.setStyleSheet("color: #555; font-size: 12px;")
+                        break
+            else:
+                self.stock_label.setText("Остаток: —")
+                self.stock_label.setStyleSheet("color: #555; font-size: 12px;")
+
         def on_product_selected(idx):
             pid = self.product_combo.itemData(idx)
             if pid:
@@ -1351,7 +1600,19 @@ class OrderDialog(QDialog):
                         self._base_amount = p.price
                         self._manual_amount_edit = False
                         update_extra()
+                        update_stock_label()
+                        # Проверка скоропортящегося товара
+                        if p.is_perishable:
+                            max_date = QDate.currentDate().addDays(PERISHABLE_DAYS)
+                            self.delivery_date.setMaximumDate(max_date)
+                            self.delivery_date.setDate(min(QDate.currentDate().addDays(1), max_date))
+                        else:
+                            self.delivery_date.setMaximumDate(QDate(2099, 12, 31))
                         break
+            else:
+                self.stock_label.setText("Остаток: —")
+                self.stock_label.setStyleSheet("color: #555; font-size: 12px;")
+
         self.product_combo.currentIndexChanged.connect(on_product_selected)
 
         def on_corp_selected(idx):
@@ -1411,6 +1672,8 @@ class OrderDialog(QDialog):
             self.card_check.setChecked(order.has_card or False)
             self.sweets_check.setChecked(order.has_sweets or False)
             self.decor_check.setChecked(order.is_office_decor or False)
+            # Обновить метку остатка
+            update_stock_label()
 
         btn_box = QHBoxLayout()
         ok_btn = QPushButton("💾 Сохранить заказ")
@@ -1916,9 +2179,7 @@ class InvoiceDialog(QDialog):
             'paid': self.paid_check.isChecked()
         }
 
-# ============================================================================
-# 11. Главное окно приложения
-# ============================================================================
+# --- 10. Главное окно ---
 class MainWindow(QMainWindow):
     def __init__(self, user_data):
         super().__init__()
@@ -1929,8 +2190,8 @@ class MainWindow(QMainWindow):
         self.role = user_data['role']
         self.is_active = user_data['is_active']
         self.store_id = None
-        self.setWindowTitle(f"🌹 Muzflowers CRM — {self.full_name or self.username} ({self.role})")
-        self.resize(1800, 1000)
+        self.setWindowTitle(f"🌹 Muzflowers B2B CRM — {self.full_name or self.username}")
+        self.resize(1900, 1050)
         self.setStyleSheet(STYLE)
         self.setup_ui()
         self.setup_shortcuts()
@@ -1975,22 +2236,22 @@ class MainWindow(QMainWindow):
         self.central = QWidget()
         self.setCentralWidget(self.central)
         main_layout = QVBoxLayout(self.central)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
         top_bar = QHBoxLayout()
         welcome = QLabel(f"👤 {self.full_name or self.username} ({self.role})")
-        welcome.setStyleSheet("font-size: 14px; font-weight: bold; color: #f38ba8;")
+        welcome.setStyleSheet("font-size: 16px; font-weight: bold; color: #F38BA8;")
         top_bar.addWidget(welcome)
 
         with session_scope() as session:
             store = session.query(Store).filter_by(is_active=True).first()
             if not store:
-                QMessageBox.critical(self, "Ошибка", "Магазин не найден. Создайте его вручную или переустановите приложение.")
+                QMessageBox.critical(self, "Ошибка", "Магазин не найден.")
                 QApplication.quit()
                 return
             self.store_id = store.id
-            store_name = store.name
-            store_label = QLabel(f"🛍️ {store_name}")
-            store_label.setStyleSheet("color: #89b4fa; font-size: 12px;")
+            store_label = QLabel(f"🛍️ {store.name}")
+            store_label.setStyleSheet("color: #88C4A3; font-size: 14px;")
             top_bar.addWidget(store_label)
             top_bar.addStretch()
 
@@ -2001,7 +2262,7 @@ class MainWindow(QMainWindow):
             ).count()
             if low_stock_count > 0:
                 warning = QLabel(f"⚠️ {low_stock_count} позиций заканчивается!")
-                warning.setStyleSheet("color: #fab387; font-weight: bold; background: #45475a; padding: 5px 10px; border-radius: 4px;")
+                warning.setStyleSheet("color: #E57373; font-weight: bold; background: #FCE4E4; padding: 5px 15px; border-radius: 20px;")
                 top_bar.addWidget(warning)
 
         refresh_btn = QPushButton("🔄 Обновить")
@@ -2014,6 +2275,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(top_bar)
 
         self.tabs = QTabWidget()
+        self.tabs.setUsesScrollButtons(True)
         main_layout.addWidget(self.tabs)
 
         self.create_dashboard_tab()
@@ -2038,10 +2300,6 @@ class MainWindow(QMainWindow):
             for idx in sorted(hidden_tabs, reverse=True):
                 if idx < self.tabs.count():
                     self.tabs.removeTab(idx)
-            if hasattr(self, 'btn_add_order'):
-                self.btn_add_order.hide()
-                self.btn_del_order.hide()
-                self.btn_edit_order.hide()
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+N"), self, self.add_order)
@@ -2085,11 +2343,10 @@ class MainWindow(QMainWindow):
 
     def show_about(self):
         QMessageBox.about(self, "О программе",
-                          "🌹 Muzflowers CRM v3.0 (Ultimate)\n\n"
-                          "Полноценная система управления цветочным магазином\n"
-                          "с расширенным каталогом, B2B, автозаказами,\n"
-                          "фотографиями товаров, настраиваемыми параметрами\n"
-                          "и ролевой моделью.\n\n"
+                          "🌹 Muzflowers B2B CRM v2.0\n\n"
+                          "Сервис корпоративных поздравлений по подписке.\n"
+                          "Управление B2B-клиентами, автозаказы, финансы.\n\n"
+                          "Дизайн вдохновлен Muzflower.ru и Posiflora.com\n"
                           "© 2026 Muzflowers")
 
     def show_app_settings(self):
@@ -2222,17 +2479,21 @@ class MainWindow(QMainWindow):
     def create_dashboard_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        layout.setSpacing(20)
+
         title = QLabel("🏠 Главная панель")
-        title.setStyleSheet("font-size: 22px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("title")
         layout.addWidget(title)
+
         metrics_layout = QHBoxLayout()
-        self.metric_revenue = self._make_metric_label("#05BE9B")
-        self.metric_profit = self._make_metric_label("#4155E1")
-        self.metric_orders = self._make_metric_label("#64D723")
-        self.metric_customers = self._make_metric_label("#4A44F2")
-        self.metric_corp = self._make_metric_label("#A0D1FF")
-        self.metric_low_stock = self._make_metric_label("#9B9FF2")
-        self.metric_debt = self._make_metric_label("#4155E1")
+        metrics_layout.setSpacing(15)
+        self.metric_revenue = self._create_metric_card("💰", "Выручка (мес)", "0 ₽")
+        self.metric_profit = self._create_metric_card("📈", "Прибыль (мес)", "0 ₽")
+        self.metric_orders = self._create_metric_card("📦", "Всего заказов", "0")
+        self.metric_customers = self._create_metric_card("👤", "Клиентов", "0")
+        self.metric_corp = self._create_metric_card("🏢", "Корп. клиентов", "0")
+        self.metric_low_stock = self._create_metric_card("⚠️", "Заканчивается", "0")
+        self.metric_debt = self._create_metric_card("💸", "Дебиторка (корп)", "0 ₽")
         metrics_layout.addWidget(self.metric_revenue)
         metrics_layout.addWidget(self.metric_profit)
         metrics_layout.addWidget(self.metric_orders)
@@ -2241,7 +2502,10 @@ class MainWindow(QMainWindow):
         metrics_layout.addWidget(self.metric_low_stock)
         metrics_layout.addWidget(self.metric_debt)
         layout.addLayout(metrics_layout)
+
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setStyleSheet("QSplitter::handle { background-color: #E8E0D5; width: 3px; }")
+
         left_box = QGroupBox("📅 Заказы на завтра")
         left_layout = QVBoxLayout(left_box)
         self.tomorrow_orders_table = QTableWidget()
@@ -2251,15 +2515,20 @@ class MainWindow(QMainWindow):
         self.tomorrow_orders_table.setEditTriggers(QTableWidget.NoEditTriggers)
         left_layout.addWidget(self.tomorrow_orders_table)
         splitter.addWidget(left_box)
+
         right_box = QGroupBox("🎉 Ближайшие события")
         right_layout = QVBoxLayout(right_box)
         self.events_preview = QListWidget()
+        self.events_preview.setStyleSheet("QListWidget { border: none; }")
         right_layout.addWidget(self.events_preview)
         splitter.addWidget(right_box)
+
         splitter.setSizes([900, 500])
         layout.addWidget(splitter)
+
         actions_group = QGroupBox("⚡ Быстрые действия")
         actions_layout = QHBoxLayout(actions_group)
+        actions_layout.setSpacing(10)
         btn_new_order = QPushButton("➕ Новый заказ (Ctrl+N)")
         btn_new_order.clicked.connect(self.add_order)
         actions_layout.addWidget(btn_new_order)
@@ -2277,13 +2546,38 @@ class MainWindow(QMainWindow):
         btn_auto.clicked.connect(self._do_auto_orders)
         actions_layout.addWidget(btn_auto)
         layout.addWidget(actions_group)
+
         self.tabs.addTab(tab, "🏠 Главная")
 
-    def _make_metric_label(self, color):
-        lbl = QLabel()
-        lbl.setStyleSheet(f"background-color: {color}; color: #1e1e2e; padding: 20px; font-size: 15px; border-radius: 10px; font-weight: bold;")
-        lbl.setMinimumHeight(80)
-        return lbl
+    def _create_metric_card(self, icon, label, value):
+        card = QFrame()
+        card.setProperty("class", "metric-card")
+        card.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border: 2px solid #E8E0D5;
+                border-radius: 16px;
+                padding: 18px;
+            }
+        """)
+        layout = QVBoxLayout(card)
+        layout.setSpacing(5)
+
+        icon_label = QLabel(icon)
+        icon_label.setStyleSheet("font-size: 32px;")
+        layout.addWidget(icon_label)
+
+        value_label = QLabel(value)
+        value_label.setObjectName("value")
+        value_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #333333;")
+        layout.addWidget(value_label)
+
+        desc_label = QLabel(label)
+        desc_label.setStyleSheet("font-size: 14px; color: #888888;")
+        layout.addWidget(desc_label)
+
+        card.value_label = value_label
+        return card
 
     def refresh_dashboard(self):
         today = date.today()
@@ -2317,18 +2611,20 @@ class MainWindow(QMainWindow):
                 Invoice.paid == False,
                 Invoice.corporate_client.has(store_id=self.store_id)
             ).scalar() or 0
+
+            self.metric_revenue.value_label.setText(f"{revenue:,.0f} ₽")
+            self.metric_profit.value_label.setText(f"{profit:,.0f} ₽")
+            self.metric_orders.value_label.setText(f"{total_orders}")
+            self.metric_customers.value_label.setText(f"{total_customers}")
+            self.metric_corp.value_label.setText(f"{corp_clients}")
+            self.metric_low_stock.value_label.setText(f"{low_stock}")
+            self.metric_debt.value_label.setText(f"{total_debt:,.0f} ₽")
+
             tomorrow = today + timedelta(days=1)
             tomorrow_orders = session.query(Order).filter(
                 Order.store_id == self.store_id,
                 Order.delivery_date == tomorrow
             ).all()
-            self.metric_revenue.setText(f"💰 Выручка (мес)\n{revenue:,.0f} ₽")
-            self.metric_profit.setText(f"📈 Прибыль (мес)\n{profit:,.0f} ₽")
-            self.metric_orders.setText(f"📦 Всего заказов\n{total_orders}")
-            self.metric_customers.setText(f"👤 Клиентов\n{total_customers}")
-            self.metric_corp.setText(f"🏢 Корп. клиентов\n{corp_clients}")
-            self.metric_low_stock.setText(f"⚠️ Заканчивается\n{low_stock} позиций")
-            self.metric_debt.setText(f"💸 Дебиторка (корп)\n{total_debt:,.0f} ₽")
             self.tomorrow_orders_table.setRowCount(len(tomorrow_orders))
             for i, o in enumerate(tomorrow_orders):
                 self.tomorrow_orders_table.setItem(i, 0, QTableWidgetItem(o.order_number or ''))
@@ -2336,6 +2632,7 @@ class MainWindow(QMainWindow):
                 self.tomorrow_orders_table.setItem(i, 2, QTableWidgetItem(o.bouquet))
                 self.tomorrow_orders_table.setItem(i, 3, QTableWidgetItem(f"{o.amount:,.0f} ₽"))
                 self.tomorrow_orders_table.setItem(i, 4, QTableWidgetItem(o.status))
+
             self.events_preview.clear()
             upcoming_holidays = get_upcoming_holidays(days=30)
             for h in upcoming_holidays:
@@ -2345,6 +2642,7 @@ class MainWindow(QMainWindow):
                 else:
                     text += f" (через {h['delta']} дн.)"
                 self.events_preview.addItem(QListWidgetItem(text))
+
             upcoming_bd = get_upcoming_customer_birthdays(days=30)
             for bd in upcoming_bd:
                 text = f"🎂 {bd['date'].strftime('%d.%m')} — {bd['name']}"
@@ -2353,6 +2651,7 @@ class MainWindow(QMainWindow):
                 else:
                     text += f" (через {bd['delta']} дн.)"
                 self.events_preview.addItem(QListWidgetItem(text))
+
             upcoming_corp = get_upcoming_corporate_birthdays(days=30)
             for bd in upcoming_corp:
                 text = f"🏢 {bd['date'].strftime('%d.%m')} — {bd['full_name']} ({bd['company_name']})"
@@ -2367,7 +2666,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("🛍️ Заказы")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("Статус:"))
@@ -2384,14 +2683,15 @@ class MainWindow(QMainWindow):
         self.search_edit.setMaximumWidth(300)
         filter_layout.addWidget(self.search_edit)
         apply_btn = QPushButton("🔍")
-        apply_btn.setMaximumWidth(40)
+        apply_btn.setMaximumWidth(70)
         reset_btn = QPushButton("Сброс")
-        reset_btn.setMaximumWidth(80)
+        reset_btn.setMaximumWidth(140)
         reset_btn.setObjectName("secondary")
         filter_layout.addWidget(apply_btn)
         filter_layout.addWidget(reset_btn)
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
+
         self.orders_table = QTableWidget()
         self.orders_table.setColumnCount(13)
         self.orders_table.setHorizontalHeaderLabels([
@@ -2405,6 +2705,7 @@ class MainWindow(QMainWindow):
         self.orders_table.setAlternatingRowColors(True)
         self.orders_table.doubleClicked.connect(self.edit_order)
         layout.addWidget(self.orders_table)
+
         btn_layout = QHBoxLayout()
         self.btn_add_order = QPushButton("➕ Новый (Ctrl+N)")
         self.btn_edit_order = QPushButton("✏️ Редактировать")
@@ -2423,6 +2724,7 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(export_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
+
         apply_btn.clicked.connect(self.refresh_orders)
         reset_btn.clicked.connect(self._reset_filters)
         self.tabs.addTab(tab, "🛍️ Заказы")
@@ -2479,7 +2781,6 @@ class MainWindow(QMainWindow):
                 table.setItem(i, 12, QTableWidgetItem("🍬" if o.has_sweets else ""))
 
     def add_order(self):
-        # Проверка прав: флорист не может создавать заказы
         if self.role == 'florist':
             QMessageBox.warning(self, "Доступ запрещён", "Флорист не может создавать заказы.")
             return
@@ -2511,13 +2812,39 @@ class MainWindow(QMainWindow):
                         session.add(customer)
                         session.flush()
                     data['customer_id'] = customer.id
-                order = Order(**data)
-                order.order_number = generate_order_number(session)
-                session.add(order)
+
+                # Проверка остатка товара
                 if data.get('product_id'):
                     product = session.get(Product, data['product_id'])
                     if product and product.stock is not None:
-                        product.stock = max(0, product.stock - data['quantity'])
+                        if product.stock < data['quantity']:
+                            QMessageBox.warning(self, "Ошибка",
+                                f"Недостаточно товара '{product.name}'. Доступно: {product.stock}, запрошено: {data['quantity']}")
+                            return
+                        # Списание остатка
+                        product.stock -= data['quantity']
+
+                # Проверка скоропортящегося товара
+                if data.get('product_id'):
+                    product = session.get(Product, data['product_id'])
+                    if product and product.is_perishable:
+                        max_delivery = date.today() + timedelta(days=PERISHABLE_DAYS)
+                        if data['delivery_date'] > max_delivery:
+                            QMessageBox.warning(self, "Ошибка",
+                                f"Скоропортящийся товар нельзя доставлять позже чем через {PERISHABLE_DAYS} дней от сегодня.")
+                            return
+
+                # Проверка: статус "доставлен" требует оплаты
+                if data['status'] == 'доставлен' and not data['paid']:
+                    reply = QMessageBox.question(self, "Предупреждение",
+                        "Заказ не оплачен. Установить статус 'доставлен'?",
+                        QMessageBox.Yes | QMessageBox.No)
+                    if reply == QMessageBox.No:
+                        return
+
+                order = Order(**data)
+                order.order_number = generate_order_number(session)
+                session.add(order)
                 self.refresh_orders()
                 self.refresh_dashboard()
                 self.statusBar().showMessage(f"✅ Заказ {order.order_number} создан", 3000)
@@ -2544,8 +2871,10 @@ class MainWindow(QMainWindow):
                 if not staff_id or order.florist_id != staff_id.id:
                     QMessageBox.warning(self, "Доступ запрещён", "Флорист может редактировать только свои заказы.")
                     return
+
             old_product_id = order.product_id
             old_quantity = order.quantity
+            old_status = order.status
 
             customers = session.query(Customer).all()
             products = session.query(Product).filter_by(is_active=True).all()
@@ -2560,18 +2889,81 @@ class MainWindow(QMainWindow):
             dlg = OrderDialog(order, customers, products, florists, corporate_clients, self.store_id, self)
             if dlg.exec_():
                 data = dlg.get_data()
+
+                # Восстанавливаем старый остаток (если был товар)
                 if old_product_id:
                     old_prod = session.get(Product, old_product_id)
                     if old_prod:
                         old_prod.stock = (old_prod.stock or 0) + old_quantity
-                for k, v in data.items():
-                    setattr(order, k, v)
+
+                # Проверяем новый товар
                 if data.get('product_id'):
                     new_prod = session.get(Product, data['product_id'])
                     if new_prod and new_prod.stock is not None:
-                        new_prod.stock = max(0, new_prod.stock - data['quantity'])
+                        if new_prod.stock < data['quantity']:
+                            # Откатываем восстановление старого остатка (возвращаем обратно)
+                            if old_product_id:
+                                old_prod = session.get(Product, old_product_id)
+                                if old_prod:
+                                    old_prod.stock = (old_prod.stock or 0) - old_quantity
+                            QMessageBox.warning(self, "Ошибка",
+                                f"Недостаточно товара '{new_prod.name}'. Доступно: {new_prod.stock}, запрошено: {data['quantity']}")
+                            return
+                        # Списание нового остатка
+                        new_prod.stock -= data['quantity']
+
+                # Проверка скоропортящегося товара
+                if data.get('product_id'):
+                    product = session.get(Product, data['product_id'])
+                    if product and product.is_perishable:
+                        max_delivery = date.today() + timedelta(days=PERISHABLE_DAYS)
+                        if data['delivery_date'] > max_delivery:
+                            QMessageBox.warning(self, "Ошибка",
+                                f"Скоропортящийся товар нельзя доставлять позже чем через {PERISHABLE_DAYS} дней от сегодня.")
+                            # Откат списания
+                            if data.get('product_id'):
+                                new_prod = session.get(Product, data['product_id'])
+                                if new_prod:
+                                    new_prod.stock = (new_prod.stock or 0) + data['quantity']
+                            if old_product_id:
+                                old_prod = session.get(Product, old_product_id)
+                                if old_prod:
+                                    old_prod.stock = (old_prod.stock or 0) - old_quantity
+                            return
+
+                # Проверка: статус "доставлен" требует оплаты
+                if data['status'] == 'доставлен' and not data['paid']:
+                    reply = QMessageBox.question(self, "Предупреждение",
+                        "Заказ не оплачен. Установить статус 'доставлен'?",
+                        QMessageBox.Yes | QMessageBox.No)
+                    if reply == QMessageBox.No:
+                        # Откат изменений
+                        if data.get('product_id'):
+                            new_prod = session.get(Product, data['product_id'])
+                            if new_prod:
+                                new_prod.stock = (new_prod.stock or 0) + data['quantity']
+                        if old_product_id:
+                            old_prod = session.get(Product, old_product_id)
+                            if old_prod:
+                                old_prod.stock = (old_prod.stock or 0) - old_quantity
+                        return
+
+                # Если статус меняется на "отменён" и есть товар, возвращаем его на склад
+                if data['status'] == 'отменён' and data['status'] != old_status and order.product_id:
+                    prod = session.get(Product, order.product_id)
+                    if prod:
+                        prod.stock = (prod.stock or 0) + order.quantity
+                        order.product_id = None  # Чтобы повторно не вернуть
+
+                # Обновляем остальные поля заказа
+                for k, v in data.items():
+                    setattr(order, k, v)
+                order.paid = data['paid']
+                session.add(order)
+                session.flush()
                 self.refresh_orders()
                 self.refresh_dashboard()
+                self.statusBar().showMessage(f"✅ Заказ {order_number} обновлён", 3000)
 
     def del_order(self):
         row = self.orders_table.currentRow()
@@ -2633,7 +3025,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("👤 Клиенты (физ. лица)")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         search_layout = QHBoxLayout()
         self.customer_search = QLineEdit()
@@ -2736,7 +3128,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
 
         title = QLabel("🌹 Каталог товаров")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
 
         filter_layout = QHBoxLayout()
@@ -2813,10 +3205,11 @@ class MainWindow(QMainWindow):
     def refresh_product_suppliers(self):
         with session_scope() as session:
             suppliers = session.query(Supplier).filter_by(is_active=True).all()
-            self.prod_supplier_combo.clear()
-            self.prod_supplier_combo.addItem("Все", None)
-            for s in suppliers:
-                self.prod_supplier_combo.addItem(s.name, s.id)
+            suppliers_data = [(s.id, s.name) for s in suppliers]
+        self.prod_supplier_combo.clear()
+        self.prod_supplier_combo.addItem("Все", None)
+        for sid, sname in suppliers_data:
+            self.prod_supplier_combo.addItem(sname, sid)
 
     def refresh_products(self):
         category = self.prod_category_combo.currentText()
@@ -2853,7 +3246,13 @@ class MainWindow(QMainWindow):
                 margin_item = QTableWidgetItem(f"{margin:,.2f} ({p.margin_percent:.1f}%)")
                 margin_item.setForeground(QColor('#a6e3a1') if margin > 0 else QColor('#f38ba8'))
                 self.products_table.setItem(i, 7, margin_item)
-                self.products_table.setItem(i, 8, QTableWidgetItem(f"{p.stock:,.1f}"))
+                # Остаток
+                stock_item = QTableWidgetItem(f"{p.stock:,.1f}")
+                if p.stock is not None and p.stock <= p.min_stock and p.min_stock > 0:
+                    stock_item.setForeground(QColor('#E57373'))  # красный
+                elif p.stock is not None and p.stock <= 0:
+                    stock_item.setForeground(QColor('#999999'))  # серый
+                self.products_table.setItem(i, 8, stock_item)
                 self.products_table.setItem(i, 9, QTableWidgetItem(f"{p.min_stock:,.1f}"))
                 self.products_table.setItem(i, 10, QTableWidgetItem(p.season or ''))
                 pop_item = QTableWidgetItem("⭐" if p.is_popular else "")
@@ -2969,7 +3368,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("📦 Склад")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         self.inventory_table = QTableWidget()
         self.inventory_table.setColumnCount(9)
@@ -3069,7 +3468,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("🚚 Поставщики")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         self.suppliers_table = QTableWidget()
         self.suppliers_table.setColumnCount(5)
@@ -3150,7 +3549,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("💸 Расходы")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         self.expenses_table = QTableWidget()
         self.expenses_table.setColumnCount(6)
@@ -3239,7 +3638,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("👥 Сотрудники магазина")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         self.staff_table = QTableWidget()
         self.staff_table.setColumnCount(7)
@@ -3327,14 +3726,14 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("🏢 Корпоративные клиенты (B2B)")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         info = QLabel(
             "💡 Сервис корпоративных поздравлений по подписке: ведём календарь ДР сотрудников, готовим букеты, доставляем. "
             "Доход стабилен и предсказуем."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #89b4fa; padding: 8px; background: #313244; border-radius: 6px;")
+        info.setStyleSheet("color: #88C4A3; padding: 10px; background: #F0F7F3; border-radius: 8px;")
         layout.addWidget(info)
         splitter = QSplitter(Qt.Vertical)
         companies_box = QGroupBox("Компании-клиенты")
@@ -3363,6 +3762,7 @@ class MainWindow(QMainWindow):
         btn_layout.addStretch()
         companies_layout.addLayout(btn_layout)
         splitter.addWidget(companies_box)
+
         employees_box = QGroupBox("Сотрудники компании (для автопоздравлений)")
         employees_layout = QVBoxLayout(employees_box)
         self.corp_emp_table = QTableWidget()
@@ -3386,6 +3786,7 @@ class MainWindow(QMainWindow):
         emp_btn_layout.addStretch()
         employees_layout.addLayout(emp_btn_layout)
         splitter.addWidget(employees_box)
+
         splitter.setSizes([400, 300])
         layout.addWidget(splitter)
         self.corp_table.itemSelectionChanged.connect(self.on_corp_selected)
@@ -3548,7 +3949,7 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("💳 Счета для корпоративных клиентов")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         self.invoices_table = QTableWidget()
         self.invoices_table.setColumnCount(7)
@@ -3663,11 +4064,11 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("🎉 Праздники и массовые заказы")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
         info = QLabel("Здесь вы можете управлять праздниками и создавать массовые заказы для всех сотрудников корпоративных клиентов.")
         info.setWordWrap(True)
-        info.setStyleSheet("color: #89b4fa; padding: 8px; background: #313244; border-radius: 6px;")
+        info.setStyleSheet("color: #88C4A3; padding: 10px; background: #F0F7F3; border-radius: 8px;")
         layout.addWidget(info)
         self.holidays_table = QTableWidget()
         self.holidays_table.setColumnCount(5)
@@ -3681,7 +4082,7 @@ class MainWindow(QMainWindow):
         edit_btn = QPushButton("✏️ Редактировать")
         del_btn = QPushButton("🗑️ Удалить")
         mass_btn = QPushButton("🎁 Создать массовые заказы")
-        mass_btn.setStyleSheet("background-color: #a6e3a1; color: #1e1e2e; font-weight: bold;")
+        mass_btn.setStyleSheet("background-color: #88C4A3; color: #FFFFFF; font-weight: bold;")
         add_btn.clicked.connect(self.add_holiday)
         edit_btn.clicked.connect(self.edit_holiday)
         del_btn.clicked.connect(self.del_holiday)
@@ -3868,15 +4269,14 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Результат", msg)
                 self.refresh_all()
 
-    # ---------- Вкладка Статистика (без графиков, только таблицы) ----------
+    # ---------- Вкладка Статистика ----------
     def create_statistics_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         title = QLabel("📊 Аналитика и отчёты")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #f38ba8;")
+        title.setObjectName("section-title")
         layout.addWidget(title)
 
-        # Группа месячной динамики
         monthly_group = QGroupBox("📈 Месячная динамика (за последние 6 месяцев)")
         monthly_layout = QVBoxLayout(monthly_group)
         self.monthly_table = QTableWidget()
@@ -3889,7 +4289,6 @@ class MainWindow(QMainWindow):
         monthly_layout.addWidget(self.monthly_table)
         layout.addWidget(monthly_group)
 
-        # Группа ABC-анализа
         abc_group = QGroupBox("📈 ABC-анализ товаров (какие приносят 80% прибыли)")
         abc_layout = QVBoxLayout(abc_group)
         self.abc_table = QTableWidget()
@@ -3901,7 +4300,6 @@ class MainWindow(QMainWindow):
         abc_layout.addWidget(self.abc_table)
         layout.addWidget(abc_group)
 
-        # Статусы заказов (просто таблица)
         status_group = QGroupBox("📊 Статусы заказов")
         status_layout = QVBoxLayout(status_group)
         self.status_table = QTableWidget()
@@ -4137,9 +4535,7 @@ class MainWindow(QMainWindow):
         Session.remove()
         event.accept()
 
-# ============================================================================
-# 12. Точка входа
-# ============================================================================
+# --- 11. Точка входа ---
 def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
@@ -4152,7 +4548,7 @@ def main():
                 phone="+7 (995) 152-21-31"
             )
             session.add(store)
-            logger.info("✅ Создан розничный магазин Muzflowers")
+            logger.info("✅ Создан магазин Muzflowers")
 
         if session.query(User).count() == 0:
             admin = User(username='admin', password_hash=hash_password('admin123'), full_name='Администратор', role='admin')
