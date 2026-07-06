@@ -1095,7 +1095,7 @@ class LoginDialog(QDialog):
         self.setModal(True)
         self.setFixedSize(500, 350)
         layout = QVBoxLayout(self)
-        title = QLabel("🌹 Muzflowers B2B CRM")
+        title = QLabel("🌹 Muzflowers CRM")
         title.setStyleSheet("font-size: 28px; font-weight: bold; color: #F38BA8;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
@@ -1106,10 +1106,10 @@ class LoginDialog(QDialog):
         layout.addSpacing(15)
         form = QFormLayout()
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("admin")
+        self.username_edit.setPlaceholderText("Логин")
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
-        self.password_edit.setPlaceholderText("••••••••")
+        self.password_edit.setPlaceholderText("Пароль")
         form.addRow("Логин:", self.username_edit)
         form.addRow("Пароль:", self.password_edit)
         layout.addLayout(form)
@@ -1117,7 +1117,7 @@ class LoginDialog(QDialog):
         self.login_btn.clicked.connect(self.try_login)
         self.password_edit.returnPressed.connect(self.try_login)
         layout.addWidget(self.login_btn)
-        hint = QLabel("admin / admin123  •  sergey / sergey123")
+        hint = QLabel("admin / admin123")
         hint.setStyleSheet("color: #D0C8BE; font-size: 10px;")
         hint.setAlignment(Qt.AlignCenter)
         layout.addWidget(hint)
@@ -2190,7 +2190,7 @@ class MainWindow(QMainWindow):
         self.role = user_data['role']
         self.is_active = user_data['is_active']
         self.store_id = None
-        self.setWindowTitle(f"🌹 Muzflowers B2B CRM — {self.full_name or self.username}")
+        self.setWindowTitle(f"🌹 Muzflowers CRM — {self.full_name or self.username}")
         self.resize(1900, 1050)
         self.setStyleSheet(STYLE)
         self.setup_ui()
@@ -2343,10 +2343,9 @@ class MainWindow(QMainWindow):
 
     def show_about(self):
         QMessageBox.about(self, "О программе",
-                          "🌹 Muzflowers B2B CRM v2.0\n\n"
+                          "🌹 Muzflowers CRM 1.0\n\n"
                           "Сервис корпоративных поздравлений по подписке.\n"
-                          "Управление B2B-клиентами, автозаказы, финансы.\n\n"
-                          "Дизайн вдохновлен Muzflower.ru и Posiflora.com\n"
+                          "Управление B2B-клиентами, автозаказы, финансы.\n"
                           "© 2026 Muzflowers")
 
     def show_app_settings(self):
@@ -3086,6 +3085,7 @@ class MainWindow(QMainWindow):
             if not data['name']:
                 QMessageBox.warning(self, "Ошибка", "Введите имя клиента")
                 return
+            data.pop('store_id', None)
             with session_scope() as session:
                 new_cust = Customer(**data)
                 session.add(new_cust)
@@ -3105,6 +3105,7 @@ class MainWindow(QMainWindow):
                 data = dlg.get_data()
                 if not data['name']:
                     return
+                data.pop('store_id', None)
                 for k, v in data.items():
                     setattr(cust, k, v)
                 self.refresh_customers()
@@ -3839,7 +3840,10 @@ class MainWindow(QMainWindow):
 
     def add_corporate_client(self):
         with session_scope() as session:
-            managers = session.query(Staff).filter_by(position='manager', is_active=True).all()
+            managers = session.query(Staff).filter(
+                Staff.position.in_(['manager', 'admin']),
+                Staff.is_active == True
+            ).all()
             dlg = CorporateClientDialog(store_id=self.store_id, managers=managers, parent=self)
             if dlg.exec_():
                 data = dlg.get_data()
@@ -3858,7 +3862,10 @@ class MainWindow(QMainWindow):
             client = session.get(CorporateClient, cid)
             if not client:
                 return
-            managers = session.query(Staff).filter_by(position='manager', is_active=True).all()
+            managers = session.query(Staff).filter(
+                Staff.position.in_(['manager', 'admin']),
+                Staff.is_active == True
+            ).all()
             dlg = CorporateClientDialog(client, self.store_id, managers, self)
             if dlg.exec_():
                 data = dlg.get_data()
@@ -4555,10 +4562,8 @@ def main():
             sergey = User(username='sergey', password_hash=hash_password('sergey123'), full_name='Сергей', role='admin')
             nikolay = User(username='nikolay', password_hash=hash_password('nikolay123'), full_name='Николай', role='admin')
             mikhail = User(username='mikhail', password_hash=hash_password('mikhail123'), full_name='Михаил', role='manager')
-            klim = User(username='klim', password_hash=hash_password('klim123'), full_name='Клим', role='manager')
-            natalia_bobrova = User(username='natalia_bobrova', password_hash=hash_password('natalia123'), full_name='Наталья Боброва', role='florist')
             natalia = User(username='natalia', password_hash=hash_password('natalia123'), full_name='Наталья', role='florist')
-            session.add_all([admin, sergey, nikolay, mikhail, klim, natalia_bobrova, natalia])
+            session.add_all([admin, sergey, nikolay, mikhail, natalia])
             logger.info("✅ Созданы пользователи")
 
         store = session.query(Store).first()
@@ -4567,18 +4572,14 @@ def main():
             sergey_user = session.query(User).filter_by(username='sergey').first()
             nikolay_user = session.query(User).filter_by(username='nikolay').first()
             mikhail_user = session.query(User).filter_by(username='mikhail').first()
-            klim_user = session.query(User).filter_by(username='klim').first()
-            natalia_bobrova_user = session.query(User).filter_by(username='natalia_bobrova').first()
             natalia_user = session.query(User).filter_by(username='natalia').first()
 
             staff_admin = Staff(user_id=admin_user.id, store_id=store.id, full_name='Администратор', position='admin', phone='+7 (900) 111-11-11', salary=100000)
             staff_sergey = Staff(user_id=sergey_user.id, store_id=store.id, full_name='Сергей', position='admin', phone='+7 (916) 162-21-31', salary=100000)
             staff_nikolay = Staff(user_id=nikolay_user.id, store_id=store.id, full_name='Николай', position='admin', phone='+7 (916) 255-86-84', salary=100000)
             staff_mikhail = Staff(user_id=mikhail_user.id, store_id=store.id, full_name='Михаил', position='manager', phone='+7 (961) 352-89-10', salary=80000)
-            staff_klim = Staff(user_id=klim_user.id, store_id=store.id, full_name='Клим', position='manager', phone='+7 (916) 198-51-56', salary=80000)
-            staff_natalia_bobrova = Staff(user_id=natalia_bobrova_user.id, store_id=store.id, full_name='Наталья Боброва', position='florist', phone='+7 (917) 549-49-41', salary=60000)
             staff_natalia = Staff(user_id=natalia_user.id, store_id=store.id, full_name='Наталья', position='florist', phone='+7 (995) 152-21-31', salary=60000)
-            session.add_all([staff_admin, staff_sergey, staff_nikolay, staff_mikhail, staff_klim, staff_natalia_bobrova, staff_natalia])
+            session.add_all([staff_admin, staff_sergey, staff_nikolay, staff_mikhail, staff_natalia])
             logger.info("✅ Созданы сотрудники")
 
         if session.query(Holiday).count() == 0:
