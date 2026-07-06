@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# pyinstaller --onefile --windowed --name "MuzflowersCRM" --icon=myicon.ico --hidden-import=matplotlib.backends.backend_qt5agg --hidden-import=apscheduler.schedulers.qt --hidden-import=apscheduler.executors.pool crm.py
+# pyinstaller --onefile --windowed --name "MuzflowersCRM" --icon=myicon.ico --hidden-import=apscheduler.schedulers.qt --hidden-import=apscheduler.executors.pool crm.py
 # ============================================================================
 # 1. Импорты
 # ============================================================================
@@ -2479,6 +2479,10 @@ class MainWindow(QMainWindow):
                 table.setItem(i, 12, QTableWidgetItem("🍬" if o.has_sweets else ""))
 
     def add_order(self):
+        # Проверка прав: флорист не может создавать заказы
+        if self.role == 'florist':
+            QMessageBox.warning(self, "Доступ запрещён", "Флорист не может создавать заказы.")
+            return
         with session_scope() as session:
             customers = session.query(Customer).all()
             products = session.query(Product).filter_by(is_active=True).all()
