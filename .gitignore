@@ -1,0 +1,9 @@
+# В базах — ФИО, дни рождения, телефоны и домашние адреса людей. В репозиторий не попадают.
+*.db
+_archive/
+backups/
+exports/
+crm.log
+*.lnk
+__pycache__/
+.pytest_cache/
